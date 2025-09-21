@@ -15,7 +15,7 @@ public class HandView : MonoBehaviour
     [SerializeField] private float _fanAngle = 8f;   // per-card Z rotation
 
     // runtime
-    private readonly List<CardManager.CardId> _current = new();
+    private readonly List<Card.CardId> _current = new();
     private HorizontalLayoutGroup _hlg;
 
     // cached to detect Inspector changes in Play Mode
@@ -95,7 +95,7 @@ public class HandView : MonoBehaviour
         _current.Clear();
     }
 
-    public IReadOnlyList<CardManager.CardId> Current => _current;
+    public IReadOnlyList<Card.CardId> Current => _current;
 
     // --- layout ---
     private void RelayoutCurrentHand()
