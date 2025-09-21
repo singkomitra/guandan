@@ -1,16 +1,20 @@
 using UnityEngine;
 using UnityEngine.UI;
-using TMPro; // For text
 
 public class Card : MonoBehaviour
 {
-    [SerializeField] private Image _iconImage;
-    [SerializeField] private TMP_Text _titleText;
+    private Image _cardImage; // private, will be set dynamically
 
-    // Set card info at runtime
-    public void SetupCard(Sprite icon, string title)
+    // Set the card's image at runtime
+    public void SetupCard(Sprite sprite)
     {
-        _iconImage.sprite = icon;
-        _titleText.text = title;
+        // Lazy grab Image if not assigned
+        if (_cardImage == null)
+            _cardImage = GetComponent<Image>();
+
+        if (_cardImage != null)
+            _cardImage.sprite = sprite;
+        else
+            Debug.LogError("No Image component found on this Card!");
     }
 }
