@@ -4,30 +4,33 @@ using UnityEngine.UI;
 
 public class CardDrag : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDragHandler
 {
+    // rectransform of the card being dragged
     private RectTransform _rectTransform;
-    private Canvas _canvas;
-    private Vector3 _startPosition;
     private Transform _startParent;
     private int _startSiblingIndex;
     private HandManager _handManager;
     private CanvasGroup _canvasGroup;
 
     private GameObject _placeholder;
+    private Vector2 _pointerOffset;
+    private LayoutElement _layoutElement;
+    private bool _addedLayoutElement = false;
 
     private void Awake()
     {
         _rectTransform = GetComponent<RectTransform>();
-        _canvas = GetComponentInParent<Canvas>(); // needed for scaling with drag
+    }
+
+    // Called by the hand when it spawns a card so we don't need to rely on scene lookups.
+    public void SetHandManager(HandManager hm)
+    {
+        _handManager = hm;
     }
 
     public void OnBeginDrag(PointerEventData eventData)
     {
-        _startPosition = _rectTransform.anchoredPosition;
         _startParent = transform.parent;
         _startSiblingIndex = transform.GetSiblingIndex();
-
-        // cache hand view if available
-        _handManager = GetComponentInParent<HandManager>();
 
         // Try to get/create a CanvasGroup so we can render on top while dragging
         _canvasGroup = GetComponent<CanvasGroup>();
@@ -46,39 +49,80 @@ public class CardDrag : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDrag
 
         var cardRt = GetComponent<RectTransform>();
         var prt = placeholderGO.GetComponent<RectTransform>();
-        // prt.localScale = Vector3.one;
-        // prt.anchorMin = prt.anchorMax = new Vector2(0.5f, 0.5f);
-        // prt.pivot = new Vector2(0.5f, 0.5f);
-        // Copy sizeDelta which reflects the intended UI element size
         prt.sizeDelta = cardRt.sizeDelta;
 
-        // make layout respect the placeholder size
-        // not needed as rn the HorinzontalLayoutGroup does not control child sizes, but if it did:
-        // var le = placeholderGO.AddComponent<LayoutElement>();
-        // le.preferredWidth = prt.sizeDelta.x;
-        // le.preferredHeight = prt.sizeDelta.y;
-        // le.minWidth = le.preferredWidth;
-        // le.minHeight = le.preferredHeight;
 
         placeholderGO.transform.SetSiblingIndex(_startSiblingIndex);
         _placeholder = placeholderGO;
 
-        // move real card to overlay so HLG won't reflow it
-        var overlay = _canvas.transform; // or a dedicated overlay container under Canvas
-        transform.SetParent(overlay);
+        // ensure the card isn't controlled by the layout while dragging
+        _layoutElement = GetComponent<LayoutElement>();
+        if (_layoutElement == null)
+        {
+            _layoutElement = gameObject.AddComponent<LayoutElement>();
+            _addedLayoutElement = true;
+        }
+        _layoutElement.ignoreLayout = true;
+
+        // Keep the real card under the hand parent (avoid reparenting) but make
+        // the layout ignore it so we can move it freely while the placeholder
+        // reserves the slot.
+        var handRt = _handManager?.GetHandRect();
+
+        // compute pointer offset in hand-local space so the grab point is preserved
+        if (handRt != null)
+        {
+            Vector2 handLocal;
+            RectTransformUtility.ScreenPointToLocalPointInRectangle(handRt, eventData.position, eventData.pressEventCamera, out handLocal);
+            _pointerOffset = handLocal - _rectTransform.anchoredPosition;
+
+            // bring this card visually on top of siblings
+            transform.SetAsLastSibling();
+        }
+        else
+        {
+            // fallback: no hand rect available
+            _pointerOffset = Vector2.zero;
+            transform.SetAsLastSibling();
+        }
         _canvasGroup.blocksRaycasts = false;
-        transform.SetAsLastSibling(); // now only affects overlay, not HLG
     }
 
     public void OnDrag(PointerEventData eventData)
     {
-        // Move the card along with the pointer
-        _rectTransform.anchoredPosition += eventData.delta / _canvas.scaleFactor;
+        // Move the dragged card while preserving the grab offset. Compute pointer
+        // in hand-local space and position the card there so we avoid reparenting.
+        var handRt = _handManager.GetHandRect();
+        Vector2 handLocal;
+        RectTransformUtility.ScreenPointToLocalPointInRectangle(handRt, eventData.position, eventData.pressEventCamera, out handLocal);
+
+        _rectTransform.anchoredPosition = handLocal - _pointerOffset;
+
+        // compute insertion index using hand-local X (simpler for uniform horizontal layouts)
+        int newIndex = _handManager.GetSiblingIndexForLocalX(_rectTransform.anchoredPosition.x);
+        _handManager.MoveCardToIndex(_placeholder.transform as RectTransform, _startSiblingIndex, newIndex);
     }
 
     public void OnEndDrag(PointerEventData eventData)
     {
-        // restore raycast behavior
+        int newIndex = _handManager.GetSiblingIndexForLocalX(_rectTransform.anchoredPosition.x);
+
+        // restore layout control
+        if (_layoutElement != null)
+        {
+            _layoutElement.ignoreLayout = false;
+            if (_addedLayoutElement)
+            {
+                Destroy(_layoutElement);
+                _layoutElement = null;
+                _addedLayoutElement = false;
+            }
+        }
+
+        // update hand ordering/data and re-layout
+        _handManager.MoveCardToIndex(_rectTransform, _startSiblingIndex, newIndex);
+
         if (_canvasGroup != null) _canvasGroup.blocksRaycasts = true;
+        if (_placeholder != null) { Destroy(_placeholder); _placeholder = null; }
     }
 }

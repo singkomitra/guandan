@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using System.Linq;
 
 /// <summary>
 /// Displays a "hand" of card prefabs under a parent RectTransform,
@@ -178,6 +179,9 @@ public class HandManager : MonoBehaviour
         for (int i = 0; i < _current.Count; i++)
         {
             var go = _manager.SpawnCard(_current[i], _handView);
+            // wire the spawned card back to this HandManager so CardDrag can call back without scene lookups
+            var drag = go.GetComponent<CardDrag>();
+            if (drag != null) drag.SetHandManager(this);
             EnsureCardVisual(go);
 
             // keep card images crisp and undistorted
@@ -189,7 +193,7 @@ public class HandManager : MonoBehaviour
             }
         }
 
-        // RelayoutCurrentHand();
+        RelayoutCurrentHand();
     }
 
     private void EnsureCardVisual(GameObject go)
@@ -257,7 +261,7 @@ public class HandManager : MonoBehaviour
 
             // Ensure HLG has updated positions before we fan
             StopAllCoroutines();
-            StartCoroutine(FanAfterLayout(count));
+            // StartCoroutine(FanAfterLayout(count));
         }
         else
         {
@@ -333,24 +337,20 @@ public class HandManager : MonoBehaviour
 
     /// <summary>
     /// Convert a local X position (in hand local space) to a sibling index where a dropped card should be inserted.
-    /// The draggingTransform parameter is optional and can be used to ignore the moving card when computing indexes.
     /// </summary>
-    public int GetSiblingIndexForLocalX(float localX, Transform draggingTransform = null)
+    public int GetSiblingIndexForLocalX(float localX)
     {
-        int count = _handView.childCount;
-        if (count == 0) return 0;
+        int count = _handView.childCount - 1; // exclude dragging card
+        if (count <= 0) return 0;
 
         // Build an array of child X positions
         var positions = new float[count];
         int idx = 0;
-        for (int i = 0; i < _handView.childCount; i++)
+        for (int i = 0; i < count; i++)
         {
             var child = _handView.GetChild(i);
-            if (draggingTransform != null && child == draggingTransform) continue;
             positions[idx++] = ((RectTransform)child).anchoredPosition.x;
         }
-
-        if (idx == 0) return 0; // only the dragging card existed
 
         // if spacing is uniform, we can pick the slot by midpoints
         // find nearest slot by comparing to child X positions
@@ -371,42 +371,31 @@ public class HandManager : MonoBehaviour
         if (localX > positions[insertAt]) insertAt++;
 
         // clamp to valid sibling range
-        return Mathf.Clamp(insertAt, 0, _handView.childCount);
+        return Mathf.Clamp(insertAt, 0, count);
     }
 
     /// <summary>
     /// Move the card transform to the requested sibling index and update the backed _current list accordingly.
     /// </summary>
-    public void MoveCardToIndex(Transform cardTransform, int newIndex)
+    public void MoveCardToIndex(RectTransform cardTransform, int oldIndex, int newIndex)
     {
         if (cardTransform == null || _handView == null) return;
-
-        // find old index among siblings (use pre-move index if already parented here)
-        int oldSibling = -1;
-        for (int i = 0; i < _handView.childCount; i++)
-        {
-            if (_handView.GetChild(i) == cardTransform)
-            {
-                oldSibling = i;
-                break;
-            }
-        }
 
         // Ensure the card is parented to the hand
         cardTransform.SetParent(_handView);
 
         // Clamp target
-        newIndex = Mathf.Clamp(newIndex, 0, _handView.childCount - (oldSibling == -1 ? 0 : 1));
+        newIndex = Mathf.Clamp(newIndex, 0, _handView.childCount - (oldIndex == -1 ? 0 : 1));
 
-        // If oldSibling was -1, we'll insert at newIndex directly
-        if (oldSibling == -1)
+        // If oldIndex was -1, we'll insert at newIndex directly
+        if (oldIndex == -1)
         {
             cardTransform.SetSiblingIndex(newIndex);
         }
         else
         {
             // If moving forward in list, account that removing shifts indices
-            if (newIndex > oldSibling) newIndex--; 
+            if (newIndex > oldIndex) newIndex--; 
             cardTransform.SetSiblingIndex(newIndex);
         }
 
