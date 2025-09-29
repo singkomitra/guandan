@@ -375,32 +375,31 @@ public class HandManager : MonoBehaviour
     }
 
     /// <summary>
-    /// Move the card transform to the requested sibling index and update the backed _current list accordingly.
+    /// Move the card transform (which MUST already be a direct child of the hand) to the requested sibling index
+    /// and update the backed _current list accordingly. This method will NOT parent a non-child
     /// </summary>
-    public void MoveCardToIndex(RectTransform cardTransform, int oldIndex, int newIndex)
+    public void MoveCardToIndex(RectTransform cardTransform, int newIndex)
     {
         if (cardTransform == null || _handView == null) return;
 
-        // Ensure the card is parented to the hand
-        cardTransform.SetParent(_handView);
-
-        // Clamp target
-        newIndex = Mathf.Clamp(newIndex, 0, _handView.childCount - (oldIndex == -1 ? 0 : 1));
-
-        // If oldIndex was -1, we'll insert at newIndex directly
-        if (oldIndex == -1)
+        // Require the caller to pass a card that is already parented to the hand.
+        if (cardTransform.parent != _handView)
         {
-            cardTransform.SetSiblingIndex(newIndex);
-        }
-        else
-        {
-            // If moving forward in list, account that removing shifts indices
-            if (newIndex > oldIndex) newIndex--; 
-            cardTransform.SetSiblingIndex(newIndex);
+            Debug.LogWarning("[HandManager] MoveCardToIndex expects the card to be a direct child of the hand. ");
+            return;
         }
 
-        // Update backed data list _current to reflect new ordering. We assume each spawned card corresponds to an entry in _current
-        // and that children order matches _current order. We'll rebuild _current to match child order.
+        int currentIndex = cardTransform.GetSiblingIndex();
+
+        // Clamp target against current child count, excluding the moving card.
+        int max = _handView.childCount - 1;
+        newIndex = Mathf.Clamp(newIndex, 0, max);
+
+        // Account for removal shifting indices when moving forward.
+        if (newIndex > currentIndex) newIndex--;
+        cardTransform.SetSiblingIndex(newIndex);
+
+        // Rebuild backing list to reflect child order
         _current.Clear();
         for (int i = 0; i < _handView.childCount; i++)
         {
@@ -410,7 +409,6 @@ public class HandManager : MonoBehaviour
                 _current.Add(card.Id);
         }
 
-        // Finally re-apply fan/layout
         RelayoutCurrentHand();
     }
 }

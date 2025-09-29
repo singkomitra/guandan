@@ -37,10 +37,6 @@ public class CardDrag : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDrag
         if (_canvasGroup == null) _canvasGroup = gameObject.AddComponent<CanvasGroup>();
         _canvasGroup.blocksRaycasts = false; // allow drop detection through this card
 
-        // store original
-        _startParent = transform.parent;
-        _startSiblingIndex = transform.GetSiblingIndex();
-
         // create a UI placeholder under the hand parent and size it to match the card
         // we are going to move the real card to a parent overlay so we can drag it freely,
         // but we need to keep a placeholder so the HorizontalLayoutGroup won't reflow other cards
@@ -85,7 +81,6 @@ public class CardDrag : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDrag
             _pointerOffset = Vector2.zero;
             transform.SetAsLastSibling();
         }
-        _canvasGroup.blocksRaycasts = false;
     }
 
     public void OnDrag(PointerEventData eventData)
@@ -100,7 +95,7 @@ public class CardDrag : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDrag
 
         // compute insertion index using hand-local X (simpler for uniform horizontal layouts)
         int newIndex = _handManager.GetSiblingIndexForLocalX(_rectTransform.anchoredPosition.x);
-        _handManager.MoveCardToIndex(_placeholder.transform as RectTransform, _startSiblingIndex, newIndex);
+        _handManager.MoveCardToIndex(_placeholder.transform as RectTransform, newIndex);
     }
 
     public void OnEndDrag(PointerEventData eventData)
@@ -120,7 +115,7 @@ public class CardDrag : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDrag
         }
 
         // update hand ordering/data and re-layout
-        _handManager.MoveCardToIndex(_rectTransform, _startSiblingIndex, newIndex);
+        _handManager.MoveCardToIndex(_rectTransform, newIndex);
 
         if (_canvasGroup != null) _canvasGroup.blocksRaycasts = true;
         if (_placeholder != null) { Destroy(_placeholder); _placeholder = null; }
