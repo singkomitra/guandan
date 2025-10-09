@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using System.Linq;
 
 /// <summary>
 /// Displays a "hand" of card prefabs under a parent RectTransform,
@@ -9,7 +10,7 @@ using UnityEngine.UI;
 /// either with a HorizontalLayoutGroup (overlap via negative spacing)
 /// or with a simple manual fan (position + Z-rotation).
 /// </summary>
-public class HandView : MonoBehaviour
+public class HandManager : MonoBehaviour
 {
     [Header("Refs")]
     [SerializeField] private CardManager _manager;
@@ -57,24 +58,24 @@ public class HandView : MonoBehaviour
     private void Start()
     {
         // try to find CardManager if not wired in the inspector
-        if (_manager == null) _manager = FindObjectOfType<CardManager>();
+        if (_manager == null) _manager = FindFirstObjectByType<CardManager>();
 
         if (_manager == null)
         {
-            Debug.LogError("[HandView] No CardManager in scene.");
+            Debug.LogError("[HandManager] No CardManager in scene.");
             enabled = false;
             return;
         }
 
         if (_handView == null)
         {
-            Debug.LogError("[HandView] Hand parent is not assigned.");
+            Debug.LogError("[HandManager] Hand parent is not assigned.");
             enabled = false;
             return;
         }
 
         if (_manager.FullDeck.Count == 0)
-            Debug.LogWarning("[HandView] CardManager has 0 cards — check Resources paths/filenames.");
+            Debug.LogWarning("[HandManager] CardManager has 0 cards — check Resources paths/filenames.");
 
         ValidateSetup();
         DealNewHand();
@@ -108,11 +109,11 @@ public class HandView : MonoBehaviour
     {
         var canvas = _handView.GetComponentInParent<Canvas>();
         if (canvas == null)
-            Debug.LogError("[HandView] Hand parent is not under a Canvas (UI won’t render).");
+            Debug.LogError("[HandManager] Hand parent is not under a Canvas (UI won’t render).");
 
         var rt = _handView as RectTransform;
         if (rt != null && (rt.rect.width <= 1f || rt.rect.height <= 1f))
-            Debug.LogWarning($"[HandView] Hand parent rect is very small ({rt.rect.size}). Give it width/height.");
+            Debug.LogWarning($"[HandManager] Hand parent rect is very small ({rt.rect.size}). Give it width/height.");
 
         if (_hlg != null)
         {
@@ -178,6 +179,9 @@ public class HandView : MonoBehaviour
         for (int i = 0; i < _current.Count; i++)
         {
             var go = _manager.SpawnCard(_current[i], _handView);
+            // wire the spawned card back to this HandManager so CardDrag can call back without scene lookups
+            var drag = go.GetComponent<CardDrag>();
+            if (drag != null) drag.SetHandManager(this);
             EnsureCardVisual(go);
 
             // keep card images crisp and undistorted
@@ -196,7 +200,7 @@ public class HandView : MonoBehaviour
     {
         var rt = go.transform as RectTransform;
         if (rt == null)
-            Debug.LogError("[HandView] Spawned card is not a RectTransform (must be a UI element).");
+            Debug.LogError("[HandManager] Spawned card is not a RectTransform (must be a UI element).");
 
         // anchors centered to play nice with HLG rotations
         rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
@@ -252,16 +256,16 @@ public class HandView : MonoBehaviour
 
         if (_hlg != null)
         {
-            if (_verboseLogs) Debug.Log("[HandView] Using HorizontalLayoutGroup for hand layout.");
+            if (_verboseLogs) Debug.Log("[HandManager] Using HorizontalLayoutGroup for hand layout.");
             _hlg.spacing = _spacing; // negative to overlap
 
             // Ensure HLG has updated positions before we fan
             StopAllCoroutines();
-            StartCoroutine(FanAfterLayout(count));
+            // StartCoroutine(FanAfterLayout(count));
         }
         else
         {
-            if (_verboseLogs) Debug.LogWarning("[HandView] No HorizontalLayoutGroup; using manual layout.");
+            if (_verboseLogs) Debug.LogWarning("[HandManager] No HorizontalLayoutGroup; using manual layout.");
             ManualFanLayout();
         }
     }
@@ -326,6 +330,87 @@ public class HandView : MonoBehaviour
     }
 
     #endregion
+
+    // Exposed helpers for drag-and-drop support
+    /// <summary>Return the RectTransform of the hand parent for hit-testing.</summary>
+    public RectTransform GetHandRect() => _handView;
+
+    /// <summary>
+    /// Convert a local X position (in hand local space) to a sibling index where a dropped card should be inserted.
+    /// </summary>
+    public int GetSiblingIndexForLocalX(float localX)
+    {
+        int count = _handView.childCount - 1; // exclude dragging card
+        if (count <= 0) return 0;
+
+        // Build an array of child X positions
+        var positions = new float[count];
+        int idx = 0;
+        for (int i = 0; i < count; i++)
+        {
+            var child = _handView.GetChild(i);
+            positions[idx++] = ((RectTransform)child).anchoredPosition.x;
+        }
+
+        // if spacing is uniform, we can pick the slot by midpoints
+        // find nearest slot by comparing to child X positions
+        int insertAt = 0;
+        float bestDist = float.MaxValue;
+        for (int i = 0; i < idx; i++)
+        {
+            float px = positions[i];
+            float dist = Mathf.Abs(localX - px);
+            if (dist < bestDist)
+            {
+                bestDist = dist;
+                insertAt = i;
+            }
+        }
+
+        // choose to insert after the nearest if pointer is to the right of it
+        if (localX > positions[insertAt]) insertAt++;
+
+        // clamp to valid sibling range
+        return Mathf.Clamp(insertAt, 0, count);
+    }
+
+    /// <summary>
+    /// Move the card transform (which MUST already be a direct child of the hand) to the requested sibling index
+    /// and update the backed _current list accordingly. This method will NOT parent a non-child
+    /// </summary>
+    public void MoveCardToIndex(RectTransform cardTransform, int newIndex)
+    {
+        if (cardTransform == null || _handView == null) return;
+
+        // Require the caller to pass a card that is already parented to the hand.
+        if (cardTransform.parent != _handView)
+        {
+            Debug.LogWarning("[HandManager] MoveCardToIndex expects the card to be a direct child of the hand. ");
+            return;
+        }
+
+        int currentIndex = cardTransform.GetSiblingIndex();
+
+        // Clamp target against current child count, excluding the moving card.
+        int max = _handView.childCount - 1;
+        newIndex = Mathf.Clamp(newIndex, 0, max);
+
+        // Account for removal shifting indices when moving forward.
+        if (newIndex > currentIndex) newIndex--;
+        cardTransform.SetSiblingIndex(newIndex);
+
+        // Rebuild backing list to reflect child order
+        _current.Clear();
+        for (int i = 0; i < _handView.childCount; i++)
+        {
+            var child = _handView.GetChild(i);
+            var card = child.GetComponent<Card>();
+            if (card != null)
+                _current.Add(card.Id);
+        }
+
+        RelayoutCurrentHand();
+    }
 }
 
 /*

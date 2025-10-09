@@ -1,0 +1,7 @@
+# Normalize line endings for Unity text files
+*.cs      text eol=lf
+*.meta    text eol=lf
+*.unity   text eol=lf
+*.prefab  text eol=lf
+*.mat     text eol=lf
+*.shader  text eol=lf
