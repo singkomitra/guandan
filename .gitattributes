@@ -11,3 +11,11 @@
 *.json     text eol=lf
 *.asset    text eol=lf
 *.txt      text eol=lf
+
+# Unity YAML Smart Merge (UnityYAMLMerge / Smart Merge)
+# Use a local git merge driver named 'unityyamlmerge'. Developers must configure
+# the `merge.unityyamlmerge.driver` in their local or global git config to point
+# to the UnityYAMLMerge executable. See `docs/UNITY_SMART_MERGE.md` for setup.
+*.unity    merge=unityyamlmerge
+*.prefab   merge=unityyamlmerge
+*.asset    merge=unityyamlmerge
