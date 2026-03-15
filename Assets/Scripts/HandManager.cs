@@ -29,6 +29,10 @@ public class HandManager : MonoBehaviour
     [Tooltip("Per-card Z rotation (degrees) for the fanned look.")]
     [SerializeField] private float _fanAngle = 8f;
 
+    [Header("Fit / Overflow")]
+    [Tooltip("Minimum fraction of each card's width that must remain visible when auto-compressing. 0.25 = at least 25% of each card shows.")]
+    [SerializeField, Range(0.05f, 0.9f)] private float _minCardVisible = 0.25f;
+
     [Header("Debug/UX")]
     [Tooltip("Enable extra Debug.Log messages.")]
     [SerializeField] private bool _verboseLogs = false;
@@ -151,7 +155,7 @@ public class HandManager : MonoBehaviour
             }
             else
             {
-                ManualFanLayout();
+                ManualFanLayout(_spacing);
             }
         }
     }
@@ -243,33 +247,20 @@ public class HandManager : MonoBehaviour
         _current.Clear();
     }
 
-    /// <summary>Play a card by moving it to the screen center and removing from hand.</summary>
-    public void PlayCard(RectTransform cardTransform) {
-        if (cardTransform == null || _canvas == null || cardTransform.parent != _handView) return;
+    /// <summary>
+    /// Remove a card from the hand and leave it on the Canvas where it was dropped.
+    /// CardDrag has already reparented the card to the Canvas and positioned it at the
+    /// drop location, so this method only needs to update hand data and re-layout.
+    /// </summary>
+    public void PlayCard(RectTransform cardTransform)
+    {
+        if (cardTransform == null) return;
 
         var card = cardTransform.GetComponent<Card>();
         if (card == null) return;
 
-        // Capture the card's WORLD (lossy) scale BEFORE reparenting
-        Vector3 worldScaleBefore = cardTransform.lossyScale;
-
         _current.Remove(card.Id);
-
-        // Reparent — worldPositionStays: false is fine here since we're centering it anyway
-        cardTransform.SetParent(_canvas.transform, false);
-        cardTransform.anchorMin = cardTransform.anchorMax = new Vector2(0.5f, 0.5f);
-        cardTransform.anchoredPosition = Vector2.zero;
         cardTransform.localRotation = Quaternion.identity;
-
-        // Back-calculate the localScale that produces the original world scale
-        // under the new parent. canvas.lossyScale is the new parent's world scale.
-        Vector3 canvasWorldScale = _canvas.transform.lossyScale;
-        cardTransform.localScale = new Vector3(
-            canvasWorldScale.x != 0 ? worldScaleBefore.x / canvasWorldScale.x : 1f,
-            canvasWorldScale.y != 0 ? worldScaleBefore.y / canvasWorldScale.y : 1f,
-            canvasWorldScale.z != 0 ? worldScaleBefore.z / canvasWorldScale.z : 1f
-        );
-
         RelayoutCurrentHand();
     }
 
@@ -288,37 +279,71 @@ public class HandManager : MonoBehaviour
         int count = _handView.childCount;
         if (count == 0) return;
 
+        float applied = ComputeAppliedSpacing();
+
         if (_hlg != null)
         {
-            if (_verboseLogs) Debug.Log("[HandManager] Using HorizontalLayoutGroup for hand layout.");
-            _hlg.spacing = _spacing; // negative to overlap
-
-            // Ensure HLG has updated positions before we fan
+            if (_verboseLogs) Debug.Log($"[HandManager] HLG spacing={applied:F1} (preferred={_spacing:F1})");
+            _hlg.spacing = applied;
             StopAllCoroutines();
-            // StartCoroutine(FanAfterLayout(count));
         }
         else
         {
             if (_verboseLogs) Debug.LogWarning("[HandManager] No HorizontalLayoutGroup; using manual layout.");
-            ManualFanLayout();
+            ManualFanLayout(applied);
         }
+    }
+
+    /// <summary>
+    /// Compute the spacing to use this frame.
+    /// Uses the inspector _spacing unless cards would overflow — in that case compresses
+    /// just enough to fit, down to a hard floor of _minCardVisible fraction per card.
+    /// </summary>
+    private float ComputeAppliedSpacing()
+    {
+        int count = _handView.childCount;
+        if (count <= 1) return _spacing;
+
+        // Measure card width from the first child; fall back to the inspector default.
+        float cardWidth = _fallbackCardSize.x;
+        var firstCard = _handView.GetChild(0) as RectTransform;
+        if (firstCard != null && firstCard.rect.width > 1f)
+            cardWidth = firstCard.rect.width;
+
+        float containerWidth = _handView.rect.width;
+        if (containerWidth <= 1f) return _spacing; // layout not ready yet
+
+        // Spacing that makes all cards exactly fill the container edge-to-edge.
+        float fitSpacing = (containerWidth - cardWidth * count) / (count - 1);
+
+        // Hardest allowed overlap: each card must show at least _minCardVisible of its width.
+        float minSpacing = -(cardWidth * (1f - _minCardVisible));
+
+        // Prefer _spacing; only compress when overflow would occur; never past the hard floor.
+        float applied = Mathf.Max(Mathf.Min(_spacing, fitSpacing), minSpacing);
+
+        if (applied <= minSpacing + 0.5f && fitSpacing < minSpacing)
+            Debug.LogWarning($"[HandManager] {count} cards cannot fit in {containerWidth:F0}px without dropping below " +
+                             $"{_minCardVisible * 100:F0}% visibility per card. Reduce hand size or increase HandViewPort width.");
+
+        return applied;
     }
 
     /// <summary>
     /// Apply a simple manual layout (no HLG): centered X positions and Z-rotation fan.
     /// </summary>
-    private void ManualFanLayout()
+    private void ManualFanLayout(float spacing)
     {
         int count = _handView.childCount;
         if (count == 0) return;
 
-        float startX = -((count - 1) * 0.5f) * _spacing;
+        float startX = -((count - 1) * 0.5f) * spacing;
         float startAngle = -((count - 1) * 0.5f) * _fanAngle;
 
         for (int i = 0; i < count; i++)
         {
             var rt = (RectTransform)_handView.GetChild(i);
-            rt.anchoredPosition = new Vector2(startX + i * _spacing, 0f);
+            rt.anchoredPosition = new Vector2(startX + i * spacing, 0f);
             rt.localRotation = Quaternion.Euler(0, 0, startAngle + i * _fanAngle);
         }
     }

@@ -98,9 +98,10 @@ public class CardManager : MonoBehaviour
                     if (!_fullDeck.Contains(id)) _fullDeck.Add(id);
                 }
             }
-            // check if loaded
-            if (!_spriteById.ContainsKey(new Card.CardId(suit, rank)))
+            else
+            {
                 Debug.LogWarning($"CardManager: Could not parse rank from sprite name '{name}' in {path}");
+            }
         }
 
         // --- local helpers ---
@@ -172,7 +173,12 @@ public class CardManager : MonoBehaviour
             return null;
         }
 
-        var p = parent == null ? _defaultParent : parent;
+        var p = parent != null ? parent : _defaultParent;
+        if (p == null)
+        {
+            Debug.LogError($"CardManager: SpawnCard called with no parent and _defaultParent is unset. Assign _defaultParent in the Inspector or pass a parent to SpawnCard.");
+            return null;
+        }
         var go = Instantiate(_cardPrefab, p);
         var card = go.GetComponent<Card>();
         if (card == null) Debug.LogError("CardManager: prefab missing Card component.");

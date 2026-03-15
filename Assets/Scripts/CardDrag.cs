@@ -106,6 +106,10 @@ public class CardDrag : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDrag
         var handRt = _handManager.GetHandRect();
         if (!RectTransformUtility.RectangleContainsScreenPoint(handRt, eventData.position, eventData.pressEventCamera))
         {
+            // Reparent to root canvas so the card leaves the hand hierarchy
+            var rootCanvas = _handManager.Canvas.rootCanvas;
+            transform.SetParent(rootCanvas.transform, true);
+            transform.SetAsLastSibling();
             _handManager.PlayCard(_rectTransform);
 
             // Clean up drag state
@@ -120,14 +124,7 @@ public class CardDrag : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDrag
             return;
         }
 
-        // Not playing, reparent back to hand and position in hand space
-        transform.SetParent(handRt);
-
-        // Convert canvas position to hand local position
-        Vector2 handLocal = _rectTransform.anchoredPosition - handRt.anchoredPosition;
-        _rectTransform.anchoredPosition = handLocal;
-
-        // restore layout control
+        // restore layout control before MoveCardToIndex so HLG can reflow
         if (_layoutElement != null)
         {
             _layoutElement.ignoreLayout = false;
@@ -139,8 +136,8 @@ public class CardDrag : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDrag
             }
         }
 
-        // update hand ordering/data and re-layout
-        int newIndex = _handManager.GetSiblingIndexForLocalX(_rectTransform.anchoredPosition.x);
+        // placeholder is already at the correct slot from OnDrag — use it directly
+        int newIndex = _placeholder.transform.GetSiblingIndex();
         _handManager.MoveCardToIndex(_rectTransform, newIndex);
 
         if (_canvasGroup != null) _canvasGroup.blocksRaycasts = true;
