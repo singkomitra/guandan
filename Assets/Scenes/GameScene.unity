@@ -380,13 +380,16 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: efac176f4f7174863a42464cfc19fce9, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::HandView
+  m_EditorClassIdentifier: Assembly-CSharp::HandManager
   _manager: {fileID: 313375000}
   _handView: {fileID: 1855772535}
+  _handDropZone: {fileID: 1530123408}
+  _tableDropZone: {fileID: 1673787569}
   _handSize: 27
   _randomSeed: 0
   _spacing: -86
   _fanAngle: -3
+  _minCardVisible: 0.25
   _verboseLogs: 0
   _fallbackCardSize: {x: 140, y: 200}
 --- !u!4 &448499604
@@ -635,6 +638,9 @@ GameObject:
   m_Component:
   - component: {fileID: 1530123406}
   - component: {fileID: 1530123407}
+  - component: {fileID: 1530123410}
+  - component: {fileID: 1530123409}
+  - component: {fileID: 1530123408}
   m_Layer: 5
   m_Name: HandViewPort
   m_TagString: Untagged
@@ -676,6 +682,56 @@ MonoBehaviour:
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.RectMask2D
   m_Padding: {x: 0, y: 0, z: 0, w: 0}
   m_Softness: {x: 0, y: 0}
+--- !u!114 &1530123408
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1530123405}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b0c3c66fec72ae94a81b56fede48dce7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::HandDropZone
+--- !u!114 &1530123409
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1530123405}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
+  m_Material: {fileID: 0}
+  m_Color: {r: 1, g: 1, b: 1, a: 0}
+  m_RaycastTarget: 1
+  m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
+  m_Maskable: 1
+  m_OnCullStateChanged:
+    m_PersistentCalls:
+      m_Calls: []
+  m_Sprite: {fileID: 0}
+  m_Type: 0
+  m_PreserveAspect: 0
+  m_FillCenter: 1
+  m_FillMethod: 4
+  m_FillAmount: 1
+  m_FillClockwise: 1
+  m_FillOrigin: 0
+  m_UseSpriteMesh: 0
+  m_PixelsPerUnitMultiplier: 1
+--- !u!222 &1530123410
+CanvasRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1530123405}
+  m_CullTransparentMesh: 1
 --- !u!1 &1673787565
 GameObject:
   m_ObjectHideFlags: 0
@@ -687,6 +743,7 @@ GameObject:
   - component: {fileID: 1673787566}
   - component: {fileID: 1673787568}
   - component: {fileID: 1673787567}
+  - component: {fileID: 1673787569}
   m_Layer: 5
   m_Name: TableArea
   m_TagString: Untagged
@@ -751,6 +808,18 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1673787565}
   m_CullTransparentMesh: 1
+--- !u!114 &1673787569
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1673787565}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e6bb9ea143d4a844888ee4897e79e5ec, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::TableDropZone
 --- !u!1 &1855772534
 GameObject:
   m_ObjectHideFlags: 0
@@ -775,7 +844,7 @@ RectTransform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1855772534}
-  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
@@ -806,8 +875,8 @@ MonoBehaviour:
     m_Bottom: 0
   m_ChildAlignment: 4
   m_Spacing: -86
-  m_ChildForceExpandWidth: 1
-  m_ChildForceExpandHeight: 1
+  m_ChildForceExpandWidth: 0
+  m_ChildForceExpandHeight: 0
   m_ChildControlWidth: 0
   m_ChildControlHeight: 0
   m_ChildScaleWidth: 0
