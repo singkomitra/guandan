@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using UnityEngine.EventSystems;
 
@@ -5,11 +6,14 @@ using UnityEngine.EventSystems;
 // Handles cards played from the hand onto the table.
 public class TableDropZone : MonoBehaviour, IDropHandler
 {
+    public event Action<RectTransform> CardPlayed;
+
     public void OnDrop(PointerEventData eventData)
     {
         var drag = eventData.pointerDrag?.GetComponent<CardDrag>();
-        if (drag == null || drag.IsFromTable) return;
+        if (drag == null || !drag.IsFromHand) return;
 
-        drag.PlayToTable();
+        drag.NotifyDropHandled();
+        CardPlayed?.Invoke(drag.CardRect);
     }
 }

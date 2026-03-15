@@ -1,15 +1,20 @@
+using System;
 using UnityEngine;
 using UnityEngine.EventSystems;
 
-// Attach to HandViewPort (or HandView). Requires a raycastable Image on the same GameObject.
-// Handles cards dropped back into the hand from anywhere.
+// Attach to HandViewPort. Requires a raycastable Image on the same GameObject.
 public class HandDropZone : MonoBehaviour, IDropHandler
 {
+    public event Action<RectTransform, int> CardReturned;
+
     public void OnDrop(PointerEventData eventData)
     {
         var drag = eventData.pointerDrag?.GetComponent<CardDrag>();
-        if (drag == null || drag.IsFromTable) return;
+        if (drag == null || !drag.IsFromHand) return;
 
-        drag.ReturnToHand();
+        int targetIndex = drag.PlaceholderSiblingIndex;
+        drag.CardRect.SetParent(drag.StartParent, true);
+        drag.NotifyDropHandled();
+        CardReturned?.Invoke(drag.CardRect, targetIndex);
     }
 }

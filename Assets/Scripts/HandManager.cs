@@ -15,6 +15,8 @@ public class HandManager : MonoBehaviour
     [Header("Refs")]
     [SerializeField] private CardManager _manager;
     [SerializeField] private RectTransform _handView;
+    [SerializeField] private HandDropZone _handDropZone;
+    [SerializeField] private TableDropZone _tableDropZone;
 
     [Header("Hand Settings")]
     [Tooltip("How many cards to show in the hand.")]
@@ -82,6 +84,9 @@ public class HandManager : MonoBehaviour
 
         if (_manager.FullDeck.Count == 0)
             Debug.LogWarning("[HandManager] CardManager has 0 cards — check Resources paths/filenames.");
+
+        if (_handDropZone != null) _handDropZone.CardReturned += OnCardReturnedToHand;
+        if (_tableDropZone != null) _tableDropZone.CardPlayed += OnCardPlayedToTable;
 
         ValidateSetup();
         DealNewHand();
@@ -187,9 +192,8 @@ public class HandManager : MonoBehaviour
         for (int i = 0; i < _current.Count; i++)
         {
             var go = _manager.SpawnCard(_current[i], _handView);
-            // wire the spawned card back to this HandManager so CardDrag can call back without scene lookups
             var drag = go.GetComponent<CardDrag>();
-            if (drag != null) drag.SetHandManager(this);
+            if (drag != null) drag.OnDragEnd += OnCardDragEnd;
             EnsureCardVisual(go);
 
             // keep card images crisp and undistorted
@@ -242,7 +246,12 @@ public class HandManager : MonoBehaviour
         if (_handView == null) return;
 
         for (int i = _handView.childCount - 1; i >= 0; i--)
-            Destroy(_handView.GetChild(i).gameObject);
+        {
+            var child = _handView.GetChild(i);
+            var drag = child.GetComponent<CardDrag>();
+            if (drag != null) drag.OnDragEnd -= OnCardDragEnd;
+            Destroy(child.gameObject);
+        }
 
         _current.Clear();
     }
@@ -388,50 +397,30 @@ public class HandManager : MonoBehaviour
         _lastFanAngle = _fanAngle;
     }
 
-    #endregion
-
-    // Exposed helpers for drag-and-drop support
-    /// <summary>Return the RectTransform of the hand parent for hit-testing.</summary>
-    public RectTransform GetHandRect() => _handView;
-
-    /// <summary>
-    /// Convert a local X position (in hand local space) to a sibling index where a dropped card should be inserted.
-    /// </summary>
-    public int GetSiblingIndexForLocalX(float localX)
+    private void OnDestroy()
     {
-        int count = _handView.childCount - 1; // exclude dragging card
-        if (count <= 0) return 0;
-
-        // Build an array of child X positions
-        var positions = new float[count];
-        int idx = 0;
-        for (int i = 0; i < count; i++)
-        {
-            var child = _handView.GetChild(i);
-            positions[idx++] = ((RectTransform)child).anchoredPosition.x;
-        }
-
-        // if spacing is uniform, we can pick the slot by midpoints
-        // find nearest slot by comparing to child X positions
-        int insertAt = 0;
-        float bestDist = float.MaxValue;
-        for (int i = 0; i < idx; i++)
-        {
-            float px = positions[i];
-            float dist = Mathf.Abs(localX - px);
-            if (dist < bestDist)
-            {
-                bestDist = dist;
-                insertAt = i;
-            }
-        }
-
-        // choose to insert after the nearest if pointer is to the right of it
-        if (localX > positions[insertAt]) insertAt++;
-
-        // clamp to valid sibling range
-        return Mathf.Clamp(insertAt, 0, count);
+        if (_handDropZone != null) _handDropZone.CardReturned -= OnCardReturnedToHand;
+        if (_tableDropZone != null) _tableDropZone.CardPlayed -= OnCardPlayedToTable;
     }
+
+    private void OnCardReturnedToHand(RectTransform cardRect, int targetIndex)
+    {
+        MoveCardToIndex(cardRect, targetIndex);
+    }
+
+    private void OnCardPlayedToTable(RectTransform cardRect)
+    {
+        PlayCard(cardRect);
+    }
+
+    private void OnCardDragEnd(CardDrag drag)
+    {
+        if (drag.WasDropHandled || !drag.IsFromHand) return;
+        drag.CardRect.SetParent(drag.StartParent, true);
+        MoveCardToIndex(drag.CardRect, drag.PlaceholderSiblingIndex);
+    }
+
+    #endregion
 
     /// <summary>
     /// Move the card transform (which MUST already be a direct child of the hand) to the requested sibling index
