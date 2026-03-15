@@ -244,23 +244,31 @@ public class HandManager : MonoBehaviour
     }
 
     /// <summary>Play a card by moving it to the screen center and removing from hand.</summary>
-    public void PlayCard(RectTransform cardTransform)
-    {
+    public void PlayCard(RectTransform cardTransform) {
         if (cardTransform == null || _canvas == null || cardTransform.parent != _handView) return;
 
         var card = cardTransform.GetComponent<Card>();
         if (card == null) return;
 
-        // Store the current visual scale factor from the hand
-        Vector3 handScale = _handView.lossyScale;
+        // Capture the card's WORLD (lossy) scale BEFORE reparenting
+        Vector3 worldScaleBefore = cardTransform.lossyScale;
 
         _current.Remove(card.Id);
-        cardTransform.SetParent(_canvas.transform);
+
+        // Reparent — worldPositionStays: false is fine here since we're centering it anyway
+        cardTransform.SetParent(_canvas.transform, false);
         cardTransform.anchorMin = cardTransform.anchorMax = new Vector2(0.5f, 0.5f);
         cardTransform.anchoredPosition = Vector2.zero;
         cardTransform.localRotation = Quaternion.identity;
-        // Adjust scale to maintain the same visual size as in the hand
-        cardTransform.localScale = handScale;
+
+        // Back-calculate the localScale that produces the original world scale
+        // under the new parent. canvas.lossyScale is the new parent's world scale.
+        Vector3 canvasWorldScale = _canvas.transform.lossyScale;
+        cardTransform.localScale = new Vector3(
+            canvasWorldScale.x != 0 ? worldScaleBefore.x / canvasWorldScale.x : 1f,
+            canvasWorldScale.y != 0 ? worldScaleBefore.y / canvasWorldScale.y : 1f,
+            canvasWorldScale.z != 0 ? worldScaleBefore.z / canvasWorldScale.z : 1f
+        );
 
         RelayoutCurrentHand();
     }

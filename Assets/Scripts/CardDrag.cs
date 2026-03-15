@@ -61,15 +61,27 @@ public class CardDrag : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDrag
         }
         _layoutElement.ignoreLayout = true;
 
-        // Reparent to canvas to render on top of the hand
-        _canvas = _handManager.Canvas;
-        transform.SetParent(_canvas.transform);
+        // Keep the real card under the hand parent (avoid reparenting) but make
+        // the layout ignore it so we can move it freely while the placeholder
+        // reserves the slot.
+        var handRt = _handManager?.GetHandRect();
 
-        // compute pointer offset in canvas-local space so the grab point is preserved
-        Vector2 canvasLocal;
-        RectTransformUtility.ScreenPointToLocalPointInRectangle(_canvas.GetComponent<RectTransform>(), eventData.position, eventData.pressEventCamera, out canvasLocal);
-        _pointerOffset = canvasLocal - _rectTransform.anchoredPosition;
+        // compute pointer offset in hand-local space so the grab point is preserved
+        if (handRt != null)
+        {
+            Vector2 handLocal;
+            RectTransformUtility.ScreenPointToLocalPointInRectangle(handRt, eventData.position, eventData.pressEventCamera, out handLocal);
+            _pointerOffset = handLocal - _rectTransform.anchoredPosition;
 
+            // bring this card visually on top of siblings
+            transform.SetAsLastSibling();
+        }
+        else
+        {
+            // fallback: no hand rect available
+            _pointerOffset = Vector2.zero;
+            transform.SetAsLastSibling();
+        }
         // bring this card visually on top of everything
         transform.SetAsLastSibling();
     }
@@ -77,10 +89,15 @@ public class CardDrag : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDrag
     public void OnDrag(PointerEventData eventData)
     {
         // Move the dragged card in canvas space, preserving the grab offset
-        Vector2 canvasLocal;
-        RectTransformUtility.ScreenPointToLocalPointInRectangle(_canvas.GetComponent<RectTransform>(), eventData.position, eventData.pressEventCamera, out canvasLocal);
+        var handRt = _handManager.GetHandRect();
+        Vector2 handLocal;
+        RectTransformUtility.ScreenPointToLocalPointInRectangle(handRt, eventData.position, eventData.pressEventCamera, out handLocal);
 
-        _rectTransform.anchoredPosition = canvasLocal - _pointerOffset;
+        _rectTransform.anchoredPosition = handLocal - _pointerOffset;
+
+        // compute insertion index using hand-local X (simpler for uniform horizontal layouts)
+        int newIndex = _handManager.GetSiblingIndexForLocalX(_rectTransform.anchoredPosition.x);
+        _handManager.MoveCardToIndex(_placeholder.transform as RectTransform, newIndex);
     }
 
     public void OnEndDrag(PointerEventData eventData)
