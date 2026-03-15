@@ -18,7 +18,7 @@ public class HandManager : MonoBehaviour
 
     [Header("Hand Settings")]
     [Tooltip("How many cards to show in the hand.")]
-    [SerializeField, Range(1, 52)] private int _handSize = 10;
+    [SerializeField, Range(1, 52)] private int _handSize = 27;
 
     [Tooltip("0 = time-based seed (let CardManager decide). Non-zero = deterministic.")]
     [SerializeField] private int _randomSeed = 0;
@@ -39,6 +39,7 @@ public class HandManager : MonoBehaviour
     // runtime
     private readonly List<Card.CardId> _current = new();
     private HorizontalLayoutGroup _hlg;
+    private Canvas _canvas;
 
     // cached to detect Inspector changes while playing
     private int _lastHandSize, _lastSeed;
@@ -53,6 +54,7 @@ public class HandManager : MonoBehaviour
     {
         // cache component lookup once here
         _hlg = _handView ? _handView.GetComponent<HorizontalLayoutGroup>() : null;
+        _canvas = _handView ? _handView.GetComponentInParent<Canvas>() : null;
     }
 
     private void Start()
@@ -111,6 +113,8 @@ public class HandManager : MonoBehaviour
         if (canvas == null)
             Debug.LogError("[HandManager] Hand parent is not under a Canvas (UI won’t render).");
 
+        Debug.Log($"[HandManager] Canvas render mode: {canvas.renderMode}, pixel rect: {canvas.pixelRect}");
+
         var rt = _handView as RectTransform;
         if (rt != null && (rt.rect.width <= 1f || rt.rect.height <= 1f))
             Debug.LogWarning($"[HandManager] Hand parent rect is very small ({rt.rect.size}). Give it width/height.");
@@ -157,8 +161,8 @@ public class HandManager : MonoBehaviour
 
     #region Public API
 
-    /// <summary>Current dealt card IDs (read-only).</summary>
-    public IReadOnlyList<Card.CardId> Current => _current;
+    /// <summary>Canvas reference for UI rendering.</summary>
+    public Canvas Canvas => _canvas;
 
     /// <summary>Deal a new hand using the manager's shuffled deck.</summary>
     [ContextMenu("Deal New Hand")]
@@ -237,6 +241,28 @@ public class HandManager : MonoBehaviour
             Destroy(_handView.GetChild(i).gameObject);
 
         _current.Clear();
+    }
+
+    /// <summary>Play a card by moving it to the screen center and removing from hand.</summary>
+    public void PlayCard(RectTransform cardTransform)
+    {
+        if (cardTransform == null || _canvas == null || cardTransform.parent != _handView) return;
+
+        var card = cardTransform.GetComponent<Card>();
+        if (card == null) return;
+
+        // Store the current visual scale factor from the hand
+        Vector3 handScale = _handView.lossyScale;
+
+        _current.Remove(card.Id);
+        cardTransform.SetParent(_canvas.transform);
+        cardTransform.anchorMin = cardTransform.anchorMax = new Vector2(0.5f, 0.5f);
+        cardTransform.anchoredPosition = Vector2.zero;
+        cardTransform.localRotation = Quaternion.identity;
+        // Adjust scale to maintain the same visual size as in the hand
+        cardTransform.localScale = handScale;
+
+        RelayoutCurrentHand();
     }
 
     #endregion
