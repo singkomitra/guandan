@@ -16,6 +16,27 @@ public class CardDrag : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDrag
     private Vector2 _pointerOffset;
     private LayoutElement _layoutElement;
     private bool _addedLayoutElement = false;
+    private bool _dragFromTable;
+    private bool _droppedOnZone;
+
+    public bool IsFromTable => _dragFromTable;
+    public int PlaceholderSiblingIndex => _placeholder != null ? _placeholder.transform.GetSiblingIndex() : _startSiblingIndex;
+
+    public void ReturnToHand()
+    {
+        _droppedOnZone = true;
+        if (_layoutElement != null) _layoutElement.ignoreLayout = false;
+        _handManager.MoveCardToIndex(_rectTransform, PlaceholderSiblingIndex);
+    }
+
+    public void PlayToTable()
+    {
+        _droppedOnZone = true;
+        var rootCanvas = _handManager.Canvas.rootCanvas;
+        transform.SetParent(rootCanvas.transform, true);
+        transform.SetAsLastSibling();
+        _handManager.PlayCard(_rectTransform);
+    }
 
     private void Awake()
     {
@@ -30,13 +51,22 @@ public class CardDrag : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDrag
 
     public void OnBeginDrag(PointerEventData eventData)
     {
-        _startParent = transform.parent;
-        _startSiblingIndex = transform.GetSiblingIndex();
-
-        // Try to get/create a CanvasGroup so we can render on top while dragging
         _canvasGroup = GetComponent<CanvasGroup>();
         if (_canvasGroup == null) _canvasGroup = gameObject.AddComponent<CanvasGroup>();
         _canvasGroup.blocksRaycasts = false; // allow drop detection through this card
+
+        _dragFromTable = _handManager == null || transform.parent != (Transform)_handManager.GetHandRect();
+
+        if (_dragFromTable)
+        {
+            // Card is on the canvas (played to table) — use screen-space tracking
+            transform.SetAsLastSibling();
+            _pointerOffset = (Vector2)_rectTransform.position - eventData.position;
+            return;
+        }
+
+        _startParent = transform.parent;
+        _startSiblingIndex = transform.GetSiblingIndex();
 
         // create a UI placeholder under the hand parent and size it to match the card
         // we are going to move the real card to a parent overlay so we can drag it freely,
@@ -47,7 +77,6 @@ public class CardDrag : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDrag
         var cardRt = GetComponent<RectTransform>();
         var prt = placeholderGO.GetComponent<RectTransform>();
         prt.sizeDelta = cardRt.sizeDelta;
-
 
         placeholderGO.transform.SetSiblingIndex(_startSiblingIndex);
         _placeholder = placeholderGO;
@@ -88,6 +117,13 @@ public class CardDrag : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDrag
 
     public void OnDrag(PointerEventData eventData)
     {
+        if (_dragFromTable)
+        {
+            Vector2 target = eventData.position + _pointerOffset;
+            _rectTransform.position = new Vector3(target.x, target.y, _rectTransform.position.z);
+            return;
+        }
+
         // Move the dragged card in canvas space, preserving the grab offset
         var handRt = _handManager.GetHandRect();
         Vector2 handLocal;
@@ -95,36 +131,31 @@ public class CardDrag : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDrag
 
         _rectTransform.anchoredPosition = handLocal - _pointerOffset;
 
-        // compute insertion index using hand-local X (simpler for uniform horizontal layouts)
-        int newIndex = _handManager.GetSiblingIndexForLocalX(_rectTransform.anchoredPosition.x);
-        _handManager.MoveCardToIndex(_placeholder.transform as RectTransform, newIndex);
+        bool overHand = RectTransformUtility.RectangleContainsScreenPoint(handRt, eventData.position, eventData.pressEventCamera);
+        _placeholder.SetActive(overHand);
+
+        if (overHand)
+        {
+            int newIndex = _handManager.GetSiblingIndexForLocalX(_rectTransform.anchoredPosition.x);
+            _handManager.MoveCardToIndex(_placeholder.transform as RectTransform, newIndex);
+        }
     }
 
     public void OnEndDrag(PointerEventData eventData)
     {
-        // Check if dropped outside the hand viewport to play the card
-        var handRt = _handManager.GetHandRect();
-        if (!RectTransformUtility.RectangleContainsScreenPoint(handRt, eventData.position, eventData.pressEventCamera))
+        if (_dragFromTable)
         {
-            // Reparent to root canvas so the card leaves the hand hierarchy
-            var rootCanvas = _handManager.Canvas.rootCanvas;
-            transform.SetParent(rootCanvas.transform, true);
-            transform.SetAsLastSibling();
-            _handManager.PlayCard(_rectTransform);
-
-            // Clean up drag state
-            if (_layoutElement != null)
-            {
-                _layoutElement.ignoreLayout = false;
-                if (_addedLayoutElement)
-                    Destroy(_layoutElement);
-            }
+            _dragFromTable = false;
             if (_canvasGroup != null) _canvasGroup.blocksRaycasts = true;
-            if (_placeholder != null) Destroy(_placeholder);
             return;
         }
 
-        // restore layout control before MoveCardToIndex so HLG can reflow
+        // If no drop zone handled this drag, fall back to returning the card to its hand slot
+        if (!_droppedOnZone)
+            ReturnToHand();
+
+        _droppedOnZone = false;
+
         if (_layoutElement != null)
         {
             _layoutElement.ignoreLayout = false;
@@ -135,11 +166,6 @@ public class CardDrag : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDrag
                 _addedLayoutElement = false;
             }
         }
-
-        // placeholder is already at the correct slot from OnDrag — use it directly
-        int newIndex = _placeholder.transform.GetSiblingIndex();
-        _handManager.MoveCardToIndex(_rectTransform, newIndex);
-
         if (_canvasGroup != null) _canvasGroup.blocksRaycasts = true;
         if (_placeholder != null) { Destroy(_placeholder); _placeholder = null; }
     }
