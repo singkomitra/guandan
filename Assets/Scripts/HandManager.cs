@@ -1,4 +1,3 @@
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
@@ -51,8 +50,6 @@ public class HandManager : MonoBehaviour
     private int _lastHandSize, _lastSeed;
     private float _lastSpacing, _lastFanAngle;
 
-    // cached waiter to avoid new allocations per relayout
-    private readonly WaitForEndOfFrame _waitEndOfFrame = new();
 
     #region Unity Lifecycle
 
@@ -194,6 +191,7 @@ public class HandManager : MonoBehaviour
             var go = _manager.SpawnCard(_current[i], _handView);
             var drag = go.GetComponent<CardDrag>();
             if (drag != null) drag.OnDragEnd += OnCardDragEnd;
+            if (go.GetComponent<CardHover>() == null) go.AddComponent<CardHover>();
             EnsureCardVisual(go);
 
             // keep card images crisp and undistorted
@@ -270,6 +268,12 @@ public class HandManager : MonoBehaviour
 
         _current.Remove(card.Id);
         cardTransform.localRotation = Quaternion.identity;
+
+        // Played cards sit on the root canvas. Disable raycasting so drops over them
+        // still fall through to the TableDropZone underneath.
+        var img = cardTransform.GetComponent<Image>();
+        if (img != null) img.raycastTarget = false;
+
         RelayoutCurrentHand();
     }
 
@@ -294,7 +298,6 @@ public class HandManager : MonoBehaviour
         {
             if (_verboseLogs) Debug.Log($"[HandManager] HLG spacing={applied:F1} (preferred={_spacing:F1})");
             _hlg.spacing = applied;
-            StopAllCoroutines();
         }
         else
         {
@@ -355,17 +358,6 @@ public class HandManager : MonoBehaviour
             rt.anchoredPosition = new Vector2(startX + i * spacing, 0f);
             rt.localRotation = Quaternion.Euler(0, 0, startAngle + i * _fanAngle);
         }
-    }
-
-    /// <summary>
-    /// After HLG places children on this frame, apply the Z-rotation fan next frame.
-    /// This avoids fighting the layout system.
-    /// </summary>
-    private IEnumerator FanAfterLayout(int count)
-    {
-        // wait for end of frame to be extra safe w/ layout timing
-        yield return _waitEndOfFrame;
-        FanImmediately();
     }
 
     /// <summary>
