@@ -50,6 +50,8 @@ public class CardDrag : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDrag
         _wasInHand = _startParent.GetComponent<HorizontalLayoutGroup>() != null;
         if (_wasInHand)
         {
+            SetSiblingRaycast(_startParent, false);
+
             var ph = new GameObject("CardPlaceholder", typeof(RectTransform));
             ph.transform.SetParent(_startParent, false);
             ph.GetComponent<RectTransform>().sizeDelta = _rectTransform.sizeDelta;
@@ -106,10 +108,20 @@ public class CardDrag : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDrag
         }
 
         _canvasGroup.blocksRaycasts = true;
+        if (_wasInHand) SetSiblingRaycast(_startParent, true);
         OnDragEnd?.Invoke(this);
 
         if (_placeholder != null) { Destroy(_placeholder); _placeholder = null; }
         _droppedOnZone = false;
+    }
+
+    private static void SetSiblingRaycast(Transform parent, bool enabled)
+    {
+        foreach (Transform child in parent)
+        {
+            var img = child.GetComponent<Image>();
+            if (img != null) img.raycastTarget = enabled;
+        }
     }
 
     private int GetSlotIndex(RectTransform parent, float localX)
