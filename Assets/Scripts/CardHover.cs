@@ -20,7 +20,8 @@ using UnityEngine.UI;
 /// </summary>
 public class CardHover : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
 {
-    [SerializeField] private float _hoverYOffset = 30f;
+    [SerializeField] private float _hoverYOffset    = 30f;
+    [SerializeField] private float _selectedYOffset = 50f;
     [SerializeField] private float _lerpSpeed = 14f;
     [SerializeField] private Color _glowColor = new Color(1f, 0.85f, 0f, 0.45f);
     [SerializeField] private Vector2 _outlineDistance = new Vector2(10f, 10f);
@@ -34,6 +35,7 @@ public class CardHover : MonoBehaviour, IPointerEnterHandler, IPointerExitHandle
     private bool _isInHand;
     private bool _isHovered;
     private bool _isDragging;
+    private bool _isSelected;
 
     private bool ShowHighlight => _isHovered || _isDragging;
 
@@ -111,12 +113,25 @@ public class CardHover : MonoBehaviour, IPointerEnterHandler, IPointerExitHandle
         UpdateVisuals();
     }
 
+    // --- Selection (driven by CardSelectable) ---
+
+    /// <summary>
+    /// Called by CardSelectable when this card's selection state changes.
+    /// Selected wins over hovered: suppresses yellow glow and uses the larger Y offset.
+    /// </summary>
+    public void SetSelected(bool selected)
+    {
+        _isSelected = selected;
+        UpdateVisuals();
+    }
+
     // --- Visuals ---
 
     private void UpdateVisuals()
     {
-        if (_outline != null) _outline.enabled = ShowHighlight;
-        _targetY = ShowHighlight ? _hoverYOffset : 0f;
+        // Yellow glow only shows when hovering/dragging and NOT selected (ring takes over).
+        if (_outline != null) _outline.enabled = ShowHighlight && !_isSelected;
+        _targetY = _isSelected ? _selectedYOffset : (ShowHighlight ? _hoverYOffset : 0f);
     }
 
     private void Update()
