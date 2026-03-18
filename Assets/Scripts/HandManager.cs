@@ -132,7 +132,7 @@ public class HandManager : MonoBehaviour
             _hlg.childControlHeight = false;
             _hlg.childForceExpandWidth = false;
             _hlg.childForceExpandHeight = false;
-            _hlg.childAlignment = TextAnchor.MiddleCenter;
+            _hlg.childAlignment = TextAnchor.LowerCenter;
         }
     }
 
