@@ -27,7 +27,7 @@ public class GroupDragHandler : MonoBehaviour
     [SerializeField] private float   _fanAngle  = 6f;
 
     [Header("Stack (pointer outside hand)")]
-    [SerializeField] private Vector2 _stackOffset = new Vector2(-6f, -6f);
+    [SerializeField] private Vector2 _stackOffset = new Vector2(-20f, -20f);
     [SerializeField] private float   _stackAngle  = 2f;
 
     [Header("Follow speed")]
