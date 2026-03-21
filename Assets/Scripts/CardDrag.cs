@@ -16,6 +16,7 @@ public class CardDrag : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDrag
     private bool _droppedOnZone;
     private bool _wasInHand;
 
+    public event Action<CardDrag> OnDragBegin;
     public event Action<CardDrag> OnDragEnd;
 
     public RectTransform CardRect       => _rectTransform;
@@ -46,6 +47,7 @@ public class CardDrag : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDrag
         _canvasGroup = GetComponent<CanvasGroup>();
         if (_canvasGroup == null) _canvasGroup = gameObject.AddComponent<CanvasGroup>();
         _canvasGroup.blocksRaycasts = false;
+        OnDragBegin?.Invoke(this);
 
         _wasInHand = _startParent.GetComponent<HorizontalLayoutGroup>() != null;
         if (_wasInHand)
@@ -80,16 +82,18 @@ public class CardDrag : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDrag
 
         if (_placeholder != null)
         {
-            var parentRt = _startParent as RectTransform;
+            var handRt = _startParent as RectTransform;
+
             bool overHand = RectTransformUtility.RectangleContainsScreenPoint(
-                parentRt, eventData.position, eventData.pressEventCamera);
+                handRt, eventData.position, eventData.pressEventCamera);
+
             _placeholder.SetActive(overHand);
 
             if (overHand)
             {
                 RectTransformUtility.ScreenPointToLocalPointInRectangle(
-                    parentRt, eventData.position, eventData.pressEventCamera, out var localPoint);
-                _placeholder.transform.SetSiblingIndex(GetSlotIndex(parentRt, localPoint.x));
+                    handRt, eventData.position, eventData.pressEventCamera, out var localPoint);
+                _placeholder.transform.SetSiblingIndex(GetSlotIndex(handRt, localPoint.x));
             }
         }
     }

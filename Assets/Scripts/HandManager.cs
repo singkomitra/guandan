@@ -132,7 +132,7 @@ public class HandManager : MonoBehaviour
             _hlg.childControlHeight = false;
             _hlg.childForceExpandWidth = false;
             _hlg.childForceExpandHeight = false;
-            _hlg.childAlignment = TextAnchor.MiddleCenter;
+            _hlg.childAlignment = TextAnchor.LowerCenter;
         }
     }
 
@@ -191,7 +191,8 @@ public class HandManager : MonoBehaviour
             var go = _manager.SpawnCard(_current[i], _handView);
             var drag = go.GetComponent<CardDrag>();
             if (drag != null) drag.OnDragEnd += OnCardDragEnd;
-            if (go.GetComponent<CardHover>() == null) go.AddComponent<CardHover>();
+            if (go.GetComponent<CardHover>()     == null) go.AddComponent<CardHover>();
+            if (go.GetComponent<CardSelectable>() == null) go.AddComponent<CardSelectable>();
             EnsureCardVisual(go);
 
             // keep card images crisp and undistorted
@@ -267,6 +268,7 @@ public class HandManager : MonoBehaviour
         if (card == null) return;
 
         _current.Remove(card.Id);
+        SelectionManager.Instance.Deselect(card.Id);
         cardTransform.localRotation = Quaternion.identity;
 
         // Played cards sit on the root canvas. Disable raycasting so drops over them
