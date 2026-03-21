@@ -64,9 +64,10 @@ public class SelectionManager
     /// On failure: fires SelectionFailed, staged list unchanged.
     /// No-op when not the player's turn or nothing is staged.
     /// </summary>
-    public void Commit()
+    /// <summary>Returns true if the staged set passed validation and was committed.</summary>
+    public bool Commit()
     {
-        if (!IsPlayerTurn || _staged.Count == 0) return;
+        if (!IsPlayerTurn || _staged.Count == 0) return false;
 
         var result = SetValidator.Validate(_staged, _context);
         if (result.IsValid)
@@ -75,10 +76,12 @@ public class SelectionManager
             _staged.Clear();
             SelectionCommitted?.Invoke(committed);
             SelectionChanged?.Invoke(_staged);
+            return true;
         }
         else
         {
             SelectionFailed?.Invoke(result);
+            return false;
         }
     }
 
