@@ -1,4 +1,4 @@
-using System;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.EventSystems;
 
@@ -6,14 +6,19 @@ using UnityEngine.EventSystems;
 // Handles cards played from the hand onto the table.
 public class TableDropZone : MonoBehaviour, IDropHandler
 {
-    public event Action<RectTransform> CardPlayed;
-
     public void OnDrop(PointerEventData eventData)
     {
         var drag = eventData.pointerDrag?.GetComponent<CardDrag>();
         if (drag == null || !drag.IsFromHand) return;
 
-        drag.NotifyDropHandled();
-        CardPlayed?.Invoke(drag.CardRect);
+        // Stage the dragged card if it wasn't already part of the selection.
+        var card = drag.GetComponent<Card>();
+        if (card != null && !SelectionManager.Instance.Staged.Contains(card.Id))
+            SelectionManager.Instance.Toggle(card.Id);
+
+        // Validate and commit. Only mark the drop as handled on success so that
+        // CardDrag's OnEndDrag returns the card to hand when validation fails.
+        bool committed = SelectionManager.Instance.Commit();
+        if (committed) drag.NotifyDropHandled();
     }
 }
