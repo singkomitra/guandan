@@ -62,12 +62,17 @@ public class SelectionManager
     /// Attempt to play the staged set. Runs SetValidator — the only place validation occurs.
     /// On success: fires SelectionCommitted then resets state.
     /// On failure: fires SelectionFailed, staged list unchanged.
-    /// No-op when not the player's turn or nothing is staged.
+    /// Returns true if the staged set passed validation and was committed.
     /// </summary>
-    /// <summary>Returns true if the staged set passed validation and was committed.</summary>
     public bool Commit()
     {
-        if (!IsPlayerTurn || _staged.Count == 0) return false;
+        if (!IsPlayerTurn)
+        {
+            if (_staged.Count > 0)
+                SelectionFailed?.Invoke(new SetValidator.ValidationResult { IsValid = false, Code = SetValidator.FailCode.NotYourTurn, FailReason = "Not your turn" });
+            return false;
+        }
+        if (_staged.Count == 0) return false;
 
         var result = SetValidator.Validate(_staged, _context);
         if (result.IsValid)
