@@ -1,0 +1,28 @@
+name: Discord Notifications
+
+on:
+  pull_request:
+    types: [opened, closed, review_requested]
+  pull_request_review:
+    types: [submitted]
+  pull_request_review_comment:
+    types: [created]
+  issue_comment:
+    types: [created]
+  issues:
+    types: [assigned]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Send Discord notification
+        env:
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          DISCORD_PR_CHANNEL_ID: ${{ secrets.DISCORD_PR_CHANNEL_ID }}
+          DISCORD_DEPLOYMENTS_CHANNEL_ID: ${{ secrets.DISCORD_DEPLOYMENTS_CHANNEL_ID }}
+          DISCORD_ISSUES_CHANNEL_ID: ${{ secrets.DISCORD_ISSUES_CHANNEL_ID }}
+          DISCORD_ID_PAOLOGUM: ${{ secrets.DISCORD_ID_PAOLOGUM }}
+          DISCORD_ID_ROSESPHINX: ${{ secrets.DISCORD_ID_ROSESPHINX }}
+        run: node .github/scripts/discord-notify.js
