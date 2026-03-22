@@ -40,12 +40,12 @@ public class CardManager : MonoBehaviour
         BuildIndex();
         if (_logOnAwake)
         {
-            Debug.Log($"[CardManager] Loaded {LoadedCount} cards");
+            // Debug.Log($"[CardManager] Loaded {LoadedCount} cards");
             // show a few examples
             int shown = 0;
             foreach (var kv in _spriteById)
             {
-                Debug.Log($"  + {kv.Key} -> '{kv.Value.name}'");
+                // Debug.Log($"  + {kv.Key} -> '{kv.Value.name}'");
                 if (++shown >= 6) break;
             }
         }
