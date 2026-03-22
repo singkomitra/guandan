@@ -20,7 +20,7 @@ public class JoinMenu : MonoBehaviour
             string address = ipInputField.text;
             if (!string.IsNullOrEmpty(address))
             {
-                networkManager.onlineScene = "GameScene";
+                networkManager.onlineScene = "LobbyScene";
                 networkManager.StartClient(address);
             }
             else
