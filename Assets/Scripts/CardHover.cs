@@ -1,164 +1,93 @@
+using System;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 /// <summary>
-/// Manages the hover highlight (Y pop + yellow glow) for a hand card.
-///
-/// State machine:
-///   _isHovered  — mouse is physically over this card (owned by pointer events)
-///   _isDragging — this card is currently being dragged (owned by CardDrag events)
-///
-/// Visuals are derived: highlight is ON when either state is true.
-/// This means the glow persists through a drag and clears cleanly on drop,
-/// with no guard clauses needed in the event handlers.
-///
-/// Why Canvas.willRenderCanvases for the Y offset:
-///   HorizontalLayoutGroup rebuilds anchoredPosition during the canvas rebuild
-///   phase, which runs after LateUpdate. Hooking here ensures our Y override
-///   always wins without flickering on relayout frames.
+/// Manages the hover highlight (yellow glow) and render priority for a hand card.
+/// Y-axis lift is now owned entirely by HandManager, which listens to AnyHoverChanged
+/// and recalculates card target positions. This class is purely visual.
 /// </summary>
-public class CardHover : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
+public class CardHover : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, ICanvasRaycastFilter
 {
-    [SerializeField] private float _hoverYOffset    = 30f;
-    [SerializeField] private float _selectedYOffset = 50f;
-    [SerializeField] private float _lerpSpeed = 14f;
-    [SerializeField] private Color _glowColor = new Color(1f, 0.85f, 0f, 0.45f);
-    [SerializeField] private Vector2 _outlineDistance = new Vector2(10f, 10f);
+    [SerializeField] private Color   _glowColor       = new Color(1f, 0.85f, 0f, 0.45f);
+    [SerializeField] private Vector2 _outlineDistance  = new Vector2(10f, 10f);
+    [Tooltip("Must match HandManager._selectedYOffset. Non-elevated cards reject raycasts in this top band.")]
+    [SerializeField] private float   _rejectionBand   = 50f;
 
     private RectTransform _rectTransform;
-    private CardDrag _drag;
-    private Outline _outline;
-    private float _currentY;
-    private float _targetY;
-    private float _baseY;     // HLG-assigned y, cached when card is at rest
-    private bool _isInHand;
-    private bool _isHovered;
-    private bool _isDragging;
-    private bool _isSelected;
+    private Card          _card;
+    private Outline       _outline;
+    private Canvas        _overrideCanvas;
+    private bool          _isHovered;
+    private bool          _isSelected;
 
-    private bool ShowHighlight => _isHovered || _isDragging;
+    /// <summary>
+    /// Fired when the pointer enters or leaves this card.
+    /// HandManager subscribes to update Y targets without CardHover touching positions.
+    /// </summary>
+    public static event Action<Card.CardId, bool> AnyHoverChanged;
 
     private void Awake()
     {
         _rectTransform = GetComponent<RectTransform>();
-        _drag = GetComponent<CardDrag>();
-        CacheIsInHand();
+        _card = GetComponent<Card>();
 
         var img = GetComponent<Image>();
         if (img != null)
         {
             _outline = gameObject.AddComponent<Outline>();
-            _outline.effectColor = _glowColor;
+            _outline.effectColor    = _glowColor;
             _outline.effectDistance = _outlineDistance;
-            _outline.enabled = false;
+            _outline.enabled        = false;
         }
     }
-
-    private void OnEnable()
-    {
-        Canvas.willRenderCanvases += ApplyYOffset;
-        if (_drag != null)
-        {
-            _drag.OnDragBegin += HandleDragBegin;
-            _drag.OnDragEnd   += HandleDragEnd;
-        }
-    }
-
-    private void OnDisable()
-    {
-        Canvas.willRenderCanvases -= ApplyYOffset;
-        if (_drag != null)
-        {
-            _drag.OnDragBegin -= HandleDragBegin;
-            _drag.OnDragEnd   -= HandleDragEnd;
-        }
-    }
-
-    private void OnTransformParentChanged() => CacheIsInHand();
-
-    private void CacheIsInHand()
-    {
-        _isInHand = _rectTransform != null &&
-                    _rectTransform.parent != null &&
-                    _rectTransform.parent.GetComponent<HorizontalLayoutGroup>() != null;
-    }
-
-    // --- Pointer events ---
 
     public void OnPointerEnter(PointerEventData eventData)
     {
         _isHovered = true;
         UpdateVisuals();
+        if (_card != null) AnyHoverChanged?.Invoke(_card.Id, true);
     }
 
     public void OnPointerExit(PointerEventData eventData)
     {
         _isHovered = false;
         UpdateVisuals();
+        if (_card != null) AnyHoverChanged?.Invoke(_card.Id, false);
     }
 
-    // --- Drag events ---
-
-    private void HandleDragBegin(CardDrag drag)
-    {
-        _isDragging = true;
-        UpdateVisuals();
-    }
-
-    private void HandleDragEnd(CardDrag drag)
-    {
-        _isDragging = false;
-        _isHovered = false; // pointer may have moved; OnPointerEnter will re-set if still over
-        UpdateVisuals();
-    }
-
-    // --- Selection (driven by CardSelectable) ---
-
-    /// <summary>
-    /// Called by CardSelectable when this card's selection state changes.
-    /// Selected wins over hovered: suppresses yellow glow and uses the larger Y offset.
-    /// </summary>
+    /// <summary>Called by CardSelectable when this card's selection state changes.</summary>
     public void SetSelected(bool selected)
     {
         _isSelected = selected;
         UpdateVisuals();
     }
 
-    // --- Visuals ---
-
     private void UpdateVisuals()
     {
-        // Yellow glow only shows when hovering/dragging and NOT selected (ring takes over).
-        if (_outline != null) _outline.enabled = ShowHighlight && !_isSelected;
-        _targetY = _isSelected ? _selectedYOffset : (ShowHighlight ? _hoverYOffset : 0f);
+        bool elevated = _isHovered || _isSelected;
+
+        // Yellow glow only when hovering and not already selected (ring takes over).
+        if (_outline != null) _outline.enabled = _isHovered && !_isSelected;
+
+        // Override sorting gives elevated cards higher render priority so they
+        // win depth-based raycasts against overlapping neighbours.
+        if (_overrideCanvas == null)
+            _overrideCanvas = gameObject.GetComponent<Canvas>() ?? gameObject.AddComponent<Canvas>();
+        if (_overrideCanvas == null) return;
+        _overrideCanvas.overrideSorting = elevated;
+        _overrideCanvas.sortingOrder    = elevated ? 1 : 0;
     }
 
-    private void Update()
+    // Non-elevated cards reject the top band so elevated neighbours win those hits.
+    public bool IsRaycastLocationValid(Vector2 screenPoint, Camera eventCamera)
     {
-        if (!_isInHand)
-        {
-            _currentY = 0f;
-            return;
-        }
+        if (_isSelected || _isHovered) return true;
 
-        _currentY = Mathf.Lerp(_currentY, _targetY, Time.deltaTime * _lerpSpeed);
-    }
+        RectTransformUtility.ScreenPointToLocalPointInRectangle(
+            _rectTransform, screenPoint, eventCamera, out Vector2 local);
 
-    private void ApplyYOffset()
-    {
-        if (!_isInHand) return;
-
-        if (Mathf.Approximately(_currentY, 0f))
-        {
-            // At rest: let HLG fully own the position and cache it as our base.
-            _baseY = _rectTransform.anchoredPosition.y;
-            return;
-        }
-
-        // Hovering/animating: write an absolute value so we never accumulate.
-        _rectTransform.anchoredPosition = new Vector2(
-            _rectTransform.anchoredPosition.x,
-            _baseY + _currentY);
+        return local.y <= _rectTransform.rect.yMax - _rejectionBand;
     }
 }

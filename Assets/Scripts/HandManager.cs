@@ -1,473 +1,485 @@
+using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.UI;
-using System.Linq;
 
 /// <summary>
-/// Displays a "hand" of card prefabs under a parent RectTransform,
-/// dealing a shuffled subset from CardManager and laying them out
-/// either with a HorizontalLayoutGroup (overlap via negative spacing)
-/// or with a simple manual fan (position + Z-rotation).
+/// Owns all card positions in the hand. No HorizontalLayoutGroup — positions are
+/// computed manually and animated via per-card lerp coroutines.
+///
+/// Layout data:
+///   _order     — logical order of cards; never mutated during drag.
+///   _dragging  — cards currently on the root canvas; excluded from layout.
+///   _insertionHint — slot index showing where the dragged card would land on drop;
+///                    creates a visual gap in the hand while hovering over it.
+///
+/// Y targets:
+///   Selected cards use _selectedYOffset, hovered cards use _hoverYOffset.
+///   HandManager subscribes to SelectionManager and CardHover.AnyHoverChanged
+///   so it can recompute Y targets without CardHover touching anchoredPosition.
 /// </summary>
 public class HandManager : MonoBehaviour
 {
     [Header("Refs")]
-    [SerializeField] private CardManager _manager;
+    [SerializeField] private CardManager  _manager;
     [SerializeField] private RectTransform _handView;
     [SerializeField] private HandDropZone _handDropZone;
-    [SerializeField] private TableDropZone _tableDropZone;
 
     [Header("Hand Settings")]
-    [Tooltip("How many cards to show in the hand.")]
-    [SerializeField, Range(1, 52)] private int _handSize = 27;
+    [SerializeField, Range(1, 52)] private int _handSize   = 27;
+    [SerializeField]               private int _randomSeed = 0;
 
-    [Tooltip("0 = time-based seed (let CardManager decide). Non-zero = deterministic.")]
-    [SerializeField] private int _randomSeed = 0;
-
-    [Tooltip("Horizontal spacing between cards. Negative to overlap (with HLG) or to step (manual).")]
+    [Header("Layout")]
+    [Tooltip("Preferred horizontal spacing. Negative = overlap.")]
     [SerializeField] private float _spacing = -120f;
-
-    [Tooltip("Per-card Z rotation (degrees) for the fanned look.")]
-    [SerializeField] private float _fanAngle = 8f;
-
-    [Header("Fit / Overflow")]
-    [Tooltip("Minimum fraction of each card's width that must remain visible when auto-compressing. 0.25 = at least 25% of each card shows.")]
+    [Tooltip("Minimum fraction of each card's width that must remain visible.")]
     [SerializeField, Range(0.05f, 0.9f)] private float _minCardVisible = 0.25f;
+    [SerializeField] private Vector2 _fallbackCardSize = new(140f, 200f);
 
-    [Header("Debug/UX")]
-    [Tooltip("Enable extra Debug.Log messages.")]
-    [SerializeField] private bool _verboseLogs = false;
+    [Header("Y Offsets")]
+    [SerializeField] private float _hoverYOffset    = 30f;
+    [SerializeField] private float _selectedYOffset = 50f;
 
-    [Header("Card Defaults (if prefab provides no size)")]
-    [SerializeField] private Vector2 _fallbackCardSize = new(140, 200);
+    [Header("Animation speeds")]
+    [Tooltip("Lerp speed for layout shifts (selection, hover, reflow).")]
+    [SerializeField] private float _layoutSpeed = 20f;
+    [Tooltip("Lerp speed for returning cards after a failed drop.")]
+    [SerializeField] private float _returnSpeed = 14f;
 
-    // runtime
-    private readonly List<Card.CardId> _current = new();
-    private HorizontalLayoutGroup _hlg;
+    // ── Static reference ────────────────────────────────────────────────────
+    // CardDrag reads this to detect whether a card was dragged from the hand
+    // without requiring an HLG component on the parent.
+    public static RectTransform HandViewRT { get; private set; }
+
+    // ── Public API ──────────────────────────────────────────────────────────
+    public RectTransform HandView => _handView;
+
+    public RectTransform GetCardRect(Card.CardId id) =>
+        _cardRects.TryGetValue(id, out var rt) ? rt : null;
+
+    // ── State ───────────────────────────────────────────────────────────────
+    private readonly List<Card.CardId>                    _order        = new();
+    private readonly Dictionary<Card.CardId, RectTransform> _cardRects  = new();
+    private readonly HashSet<Card.CardId>                 _dragging     = new();
+    private readonly HashSet<Card.CardId>                 _hovered      = new();
+    private readonly Dictionary<Card.CardId, Coroutine>   _moveRoutines = new();
+
+    private int    _insertionHint = -1; // slot index of visual gap; -1 = none
     private Canvas _canvas;
 
-    // cached to detect Inspector changes while playing
-    private int _lastHandSize, _lastSeed;
-    private float _lastSpacing, _lastFanAngle;
-
-
-    #region Unity Lifecycle
+    // ── Lifecycle ───────────────────────────────────────────────────────────
 
     private void Awake()
     {
-        // cache component lookup once here
-        _hlg = _handView ? _handView.GetComponent<HorizontalLayoutGroup>() : null;
-        _canvas = _handView ? _handView.GetComponentInParent<Canvas>() : null;
+        HandViewRT = _handView;
+        _canvas    = _handView ? _handView.GetComponentInParent<Canvas>() : null;
     }
 
     private void Start()
     {
-        // try to find CardManager if not wired in the inspector
         if (_manager == null) _manager = FindFirstObjectByType<CardManager>();
-
-        if (_manager == null)
+        if (_manager == null || _handView == null)
         {
-            Debug.LogError("[HandManager] No CardManager in scene.");
+            Debug.LogError("[HandManager] CardManager or HandView not assigned.");
             enabled = false;
             return;
         }
-
-        if (_handView == null)
-        {
-            Debug.LogError("[HandManager] Hand parent is not assigned.");
-            enabled = false;
-            return;
-        }
-
-        if (_manager.FullDeck.Count == 0)
-            Debug.LogWarning("[HandManager] CardManager has 0 cards — check Resources paths/filenames.");
 
         if (_handDropZone != null) _handDropZone.CardReturned += OnCardReturnedToHand;
-        if (_tableDropZone != null) _tableDropZone.CardPlayed += OnCardPlayedToTable;
+        SelectionManager.Instance.SelectionChanged   += OnSelectionChanged;
+        SelectionManager.Instance.SelectionCommitted += OnSelectionCommitted;
+        CardDrag.AnyDragBegin     += OnAnyDragBegin;
+        CardDrag.AnyDragEnd       += OnAnyDragEnd;
+        CardDrag.AnyDragMoved     += OnAnyDragMoved;
+        CardHover.AnyHoverChanged += OnAnyHoverChanged;
 
-        ValidateSetup();
         DealNewHand();
-        SnapshotSettings();
-    }
-
-    private void Update()
-    {
-        // only respond to runtime inspector tweaks while playing
-        if (!Application.isPlaying) return;
-
-        // if hand size or seed changed → re-deal a new hand
-        if (_handSize != _lastHandSize || _randomSeed != _lastSeed)
-        {
-            DealNewHand();
-            SnapshotSettings();
-            return;
-        }
-
-        // if layout knobs changed → keep same cards, just re-layout
-        if (!Mathf.Approximately(_spacing, _lastSpacing) ||
-            !Mathf.Approximately(_fanAngle, _lastFanAngle))
-        {
-            RelayoutCurrentHand();
-            SnapshotSettings();
-        }
-    }
-
-    // call this once in Start() after you validate refs
-    private void ValidateSetup()
-    {
-        var canvas = _handView.GetComponentInParent<Canvas>();
-        if (canvas == null)
-            Debug.LogError("[HandManager] Hand parent is not under a Canvas (UI won’t render).");
-
-        Debug.Log($"[HandManager] Canvas render mode: {canvas.renderMode}, pixel rect: {canvas.pixelRect}");
-
-        var rt = _handView as RectTransform;
-        if (rt != null && (rt.rect.width <= 1f || rt.rect.height <= 1f))
-            Debug.LogWarning($"[HandManager] Hand parent rect is very small ({rt.rect.size}). Give it width/height.");
-
-        if (_hlg != null)
-        {
-            // sensible defaults for card stacks
-            _hlg.childControlWidth = false;
-            _hlg.childControlHeight = false;
-            _hlg.childForceExpandWidth = false;
-            _hlg.childForceExpandHeight = false;
-            _hlg.childAlignment = TextAnchor.LowerCenter;
-        }
-    }
-
-#if UNITY_EDITOR
-    // this lets you preview spacing/angle changes in the editor (when not playing)
-    private void OnValidate()
-    {
-        // very defensive: these accesses can happen before Start()
-        if (_handView == null) return;
-
-        // refresh cached ref if the parent changed in inspector
-        _hlg ??= _handView.GetComponent<HorizontalLayoutGroup>();
-
-        // quick in-editor relayout for visual feedback
-        if (!Application.isPlaying)
-        {
-            if (_hlg != null)
-            {
-                _hlg.spacing = _spacing;
-                // apply fan after Unity runs the layout pass in editor
-                FanImmediately();
-            }
-            else
-            {
-                ManualFanLayout(_spacing);
-            }
-        }
-    }
-#endif
-
-    #endregion
-
-    #region Public API
-
-    /// <summary>Canvas reference for UI rendering.</summary>
-    public Canvas Canvas => _canvas;
-
-    /// <summary>Deal a new hand using the manager's shuffled deck.</summary>
-    [ContextMenu("Deal New Hand")]
-    public void DealNewHand()
-    {
-        if (_manager == null || _handView == null) return;
-
-        ClearHand();
-
-        var deck = _manager.GetShuffledDeck(_randomSeed);
-        int n = Mathf.Min(_handSize, deck.Count);
-
-        _current.Capacity = Mathf.Max(_current.Capacity, n);
-        for (int i = 0; i < n; i++)
-            _current.Add(deck[i]);
-
-        // spawn card visuals
-        for (int i = 0; i < _current.Count; i++)
-        {
-            var go = _manager.SpawnCard(_current[i], _handView);
-            var drag = go.GetComponent<CardDrag>();
-            if (drag != null) drag.OnDragEnd += OnCardDragEnd;
-            if (go.GetComponent<CardHover>()     == null) go.AddComponent<CardHover>();
-            if (go.GetComponent<CardSelectable>() == null) go.AddComponent<CardSelectable>();
-            EnsureCardVisual(go);
-
-            // keep card images crisp and undistorted
-            var img = go.GetComponentInChildren<Image>();
-            if (img != null)
-            {
-                img.type = Image.Type.Simple;
-                img.preserveAspect = true;
-            }
-        }
-
-        RelayoutCurrentHand();
-    }
-
-    private void EnsureCardVisual(GameObject go)
-    {
-        var rt = go.transform as RectTransform;
-        if (rt == null)
-            Debug.LogError("[HandManager] Spawned card is not a RectTransform (must be a UI element).");
-
-        // anchors centered to play nice with HLG rotations
-        rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
-        rt.pivot = new Vector2(0.5f, 0.5f);
-        rt.localScale = Vector3.one;
-
-        // if the prefab has no size, give it a fallback size
-        if (rt.rect.width < 1f || rt.rect.height < 1f)
-            rt.sizeDelta = _fallbackCardSize;
-
-        // make sure there is something to render
-        var img = go.GetComponentInChildren<Image>(true);
-        if (img == null)
-            img = go.AddComponent<Image>(); // temp visual so you can see it
-
-        if (img.sprite == null)
-        {
-            // no sprite? use a debug color so you *see* the rect
-            img.color = new Color(0.9f, 0.9f, 0.9f, 1f);
-            img.raycastTarget = false;
-        }
-        img.type = Image.Type.Simple;
-        img.preserveAspect = true;
-    }
-
-
-    /// <summary>Remove all card instances from the hand and clear IDs.</summary>
-    [ContextMenu("Clear Hand")]
-    public void ClearHand()
-    {
-        if (_handView == null) return;
-
-        for (int i = _handView.childCount - 1; i >= 0; i--)
-        {
-            var child = _handView.GetChild(i);
-            var drag = child.GetComponent<CardDrag>();
-            if (drag != null) drag.OnDragEnd -= OnCardDragEnd;
-            Destroy(child.gameObject);
-        }
-
-        _current.Clear();
-    }
-
-    /// <summary>
-    /// Remove a card from the hand and leave it on the Canvas where it was dropped.
-    /// CardDrag has already reparented the card to the Canvas and positioned it at the
-    /// drop location, so this method only needs to update hand data and re-layout.
-    /// </summary>
-    public void PlayCard(RectTransform cardTransform)
-    {
-        if (cardTransform == null) return;
-
-        var card = cardTransform.GetComponent<Card>();
-        if (card == null) return;
-
-        _current.Remove(card.Id);
-        SelectionManager.Instance.Deselect(card.Id);
-        cardTransform.localRotation = Quaternion.identity;
-
-        // Played cards sit on the root canvas. Disable raycasting so drops over them
-        // still fall through to the TableDropZone underneath.
-        var img = cardTransform.GetComponent<Image>();
-        if (img != null) img.raycastTarget = false;
-
-        // Render played card behind the hand by inserting it just before the hand's
-        // top-level ancestor in the root canvas, so it never covers hand cards.
-        Transform handRoot = _handView;
-        while (handRoot.parent != null && handRoot.parent != cardTransform.parent)
-            handRoot = handRoot.parent;
-        if (handRoot.parent == cardTransform.parent)
-            cardTransform.SetSiblingIndex(handRoot.GetSiblingIndex());
-
-        RelayoutCurrentHand();
-    }
-
-    #endregion
-
-    #region Layout
-
-    /// <summary>
-    /// Re-layout the current hand. Uses HorizontalLayoutGroup if present (with overlap),
-    /// otherwise applies a simple manual fan (position + rotation).
-    /// </summary>
-    private void RelayoutCurrentHand()
-    {
-        if (_handView == null) return;
-
-        int count = _handView.childCount;
-        if (count == 0) return;
-
-        float applied = ComputeAppliedSpacing();
-
-        if (_hlg != null)
-        {
-            if (_verboseLogs) Debug.Log($"[HandManager] HLG spacing={applied:F1} (preferred={_spacing:F1})");
-            _hlg.spacing = applied;
-        }
-        else
-        {
-            if (_verboseLogs) Debug.LogWarning("[HandManager] No HorizontalLayoutGroup; using manual layout.");
-            ManualFanLayout(applied);
-        }
-    }
-
-    /// <summary>
-    /// Compute the spacing to use this frame.
-    /// Uses the inspector _spacing unless cards would overflow — in that case compresses
-    /// just enough to fit, down to a hard floor of _minCardVisible fraction per card.
-    /// </summary>
-    private float ComputeAppliedSpacing()
-    {
-        int count = _handView.childCount;
-        if (count <= 1) return _spacing;
-
-        // Measure card width from the first child; fall back to the inspector default.
-        float cardWidth = _fallbackCardSize.x;
-        var firstCard = _handView.GetChild(0) as RectTransform;
-        if (firstCard != null && firstCard.rect.width > 1f)
-            cardWidth = firstCard.rect.width;
-
-        float containerWidth = _handView.rect.width;
-        if (containerWidth <= 1f) return _spacing; // layout not ready yet
-
-        // Spacing that makes all cards exactly fill the container edge-to-edge.
-        float fitSpacing = (containerWidth - cardWidth * count) / (count - 1);
-
-        // Hardest allowed overlap: each card must show at least _minCardVisible of its width.
-        float minSpacing = -(cardWidth * (1f - _minCardVisible));
-
-        // Prefer _spacing; only compress when overflow would occur; never past the hard floor.
-        float applied = Mathf.Max(Mathf.Min(_spacing, fitSpacing), minSpacing);
-
-        if (applied <= minSpacing + 0.5f && fitSpacing < minSpacing)
-            Debug.LogWarning($"[HandManager] {count} cards cannot fit in {containerWidth:F0}px without dropping below " +
-                             $"{_minCardVisible * 100:F0}% visibility per card. Reduce hand size or increase HandViewPort width.");
-
-        return applied;
-    }
-
-    /// <summary>
-    /// Apply a simple manual layout (no HLG): centered X positions and Z-rotation fan.
-    /// </summary>
-    private void ManualFanLayout(float spacing)
-    {
-        int count = _handView.childCount;
-        if (count == 0) return;
-
-        float startX = -((count - 1) * 0.5f) * spacing;
-        float startAngle = -((count - 1) * 0.5f) * _fanAngle;
-
-        for (int i = 0; i < count; i++)
-        {
-            var rt = (RectTransform)_handView.GetChild(i);
-            rt.anchoredPosition = new Vector2(startX + i * spacing, 0f);
-            rt.localRotation = Quaternion.Euler(0, 0, startAngle + i * _fanAngle);
-        }
-    }
-
-    /// <summary>
-    /// Apply fan rotation to current children immediately (positions assumed valid).
-    /// </summary>
-    private void FanImmediately()
-    {
-        int count = _handView.childCount;
-        if (count == 0) return;
-
-        float startAngle = -((count - 1) * 0.5f) * _fanAngle;
-        for (int i = 0; i < count; i++)
-        {
-            var rt = (RectTransform)_handView.GetChild(i);
-            rt.localRotation = Quaternion.Euler(0, 0, startAngle + i * _fanAngle);
-        }
-    }
-
-    #endregion
-
-    #region Internals
-
-    /// <summary>Cache current inspector values to detect changes next frame.</summary>
-    private void SnapshotSettings()
-    {
-        _lastHandSize = _handSize;
-        _lastSeed = _randomSeed;
-        _lastSpacing = _spacing;
-        _lastFanAngle = _fanAngle;
     }
 
     private void OnDestroy()
     {
         if (_handDropZone != null) _handDropZone.CardReturned -= OnCardReturnedToHand;
-        if (_tableDropZone != null) _tableDropZone.CardPlayed -= OnCardPlayedToTable;
+        SelectionManager.Instance.SelectionChanged   -= OnSelectionChanged;
+        SelectionManager.Instance.SelectionCommitted -= OnSelectionCommitted;
+        CardDrag.AnyDragBegin     -= OnAnyDragBegin;
+        CardDrag.AnyDragEnd       -= OnAnyDragEnd;
+        CardDrag.AnyDragMoved     -= OnAnyDragMoved;
+        CardHover.AnyHoverChanged -= OnAnyHoverChanged;
     }
 
-    private void OnCardReturnedToHand(RectTransform cardRect, int targetIndex)
+    // ── Deal ────────────────────────────────────────────────────────────────
+
+    [ContextMenu("Deal New Hand")]
+    public void DealNewHand()
     {
-        MoveCardToIndex(cardRect, targetIndex);
+        ClearHand();
+
+        var deck = _manager.GetShuffledDeck(_randomSeed);
+        int n    = Mathf.Min(_handSize, deck.Count);
+        for (int i = 0; i < n; i++) _order.Add(deck[i]);
+
+        foreach (var id in _order)
+        {
+            var go = _manager.SpawnCard(id, _handView);
+            SetupCard(go);
+            _cardRects[id] = go.GetComponent<RectTransform>();
+        }
+
+        SnapLayout(); // instant on deal — no animation
     }
 
-    private void OnCardPlayedToTable(RectTransform cardRect)
+    [ContextMenu("Clear Hand")]
+    public void ClearHand()
     {
-        PlayCard(cardRect);
+        foreach (var c in _moveRoutines.Values)
+            if (c != null) StopCoroutine(c);
+        _moveRoutines.Clear();
+
+        foreach (var rt in _cardRects.Values)
+            if (rt != null) Destroy(rt.gameObject);
+
+        _order.Clear();
+        _cardRects.Clear();
+        _dragging.Clear();
+        _hovered.Clear();
+        _insertionHint = -1;
     }
 
-    private void OnCardDragEnd(CardDrag drag)
+    private void SetupCard(GameObject go)
     {
-        if (drag.WasDropHandled || !drag.IsFromHand) return;
-        drag.CardRect.SetParent(drag.StartParent, true);
-        MoveCardToIndex(drag.CardRect, drag.PlaceholderSiblingIndex);
+        var rt       = (RectTransform)go.transform;
+        rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
+        rt.pivot     = new Vector2(0.5f, 0.5f);
+        rt.localScale = Vector3.one;
+        if (rt.rect.width < 1f || rt.rect.height < 1f) rt.sizeDelta = _fallbackCardSize;
+
+        var img = go.GetComponentInChildren<Image>(true) ?? go.AddComponent<Image>();
+        if (img.sprite == null) img.color = new Color(0.9f, 0.9f, 0.9f, 1f);
+        img.type           = Image.Type.Simple;
+        img.preserveAspect = true;
+
+        if (go.GetComponent<CardHover>()      == null) go.AddComponent<CardHover>();
+        if (go.GetComponent<CardSelectable>() == null) go.AddComponent<CardSelectable>();
     }
 
-    #endregion
+    // ── Drag ────────────────────────────────────────────────────────────────
+
+    private void OnAnyDragBegin(CardDrag drag)
+    {
+        var card = drag.GetComponent<Card>();
+        if (card == null || !_cardRects.ContainsKey(card.Id)) return;
+
+        // Always mark the primary card as dragging.
+        // Also mark staged cards — GroupDragHandler moves them as followers whenever
+        // staged.Count > 1, regardless of whether the primary is selected.
+        var staged = SelectionManager.Instance.Staged;
+        _dragging.Add(card.Id);
+        foreach (var id in staged)
+            if (_cardRects.ContainsKey(id)) _dragging.Add(id);
+
+        foreach (var id in _dragging)
+        {
+            // Cards with blocksRaycasts = false won't fire OnPointerExit — clear hover state now.
+            _hovered.Remove(id);
+            // Stop any running animation so it doesn't fight CardDrag's anchoredPosition writes.
+            if (_moveRoutines.TryGetValue(id, out var c) && c != null)
+            {
+                StopCoroutine(c);
+                _moveRoutines.Remove(id);
+            }
+        }
+
+        _insertionHint = -1;
+        RefreshLayout(_layoutSpeed);
+    }
+
+    private void OnAnyDragEnd(CardDrag drag)
+    {
+        if (drag.WasDropHandled) return; // commit or hand-drop handled elsewhere
+
+        var card = drag.GetComponent<Card>();
+        if (card != null && _dragging.Contains(card.Id))
+            ReturnCard(card.Id);
+    }
+
+    private void OnAnyDragMoved(CardDrag drag, Vector2 screenPos)
+    {
+        var card = drag.GetComponent<Card>();
+        if (card == null || !_cardRects.ContainsKey(card.Id)) return;
+
+        Camera cam     = _canvas != null ? _canvas.worldCamera : null;
+        bool   overHand = RectTransformUtility.RectangleContainsScreenPoint(_handView, screenPos, cam);
+
+        if (!overHand) { ClearInsertionHint(); return; }
+
+        RectTransformUtility.ScreenPointToLocalPointInRectangle(
+            _handView, screenPos, cam, out var local);
+        SetInsertionHint(ComputeInsertionIndex(local.x));
+    }
+
+    private int ComputeInsertionIndex(float localX)
+    {
+        // Return the insertion slot index within the VISIBLE list (excludes dragging cards).
+        int visibleIndex = 0;
+        foreach (var id in _order)
+        {
+            if (_dragging.Contains(id)) continue;
+            if (_cardRects.TryGetValue(id, out var rt) && localX < rt.anchoredPosition.x)
+                return visibleIndex;
+            visibleIndex++;
+        }
+        return visibleIndex; // append at end
+    }
+
+    private void SetInsertionHint(int index)
+    {
+        if (_insertionHint == index) return;
+        _insertionHint = index;
+        RefreshLayout(_layoutSpeed);
+    }
+
+    private void ClearInsertionHint()
+    {
+        if (_insertionHint == -1) return;
+        _insertionHint = -1;
+        RefreshLayout(_layoutSpeed);
+    }
+
+    // ── Return cards ────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Move the card transform (which MUST already be a direct child of the hand) to the requested sibling index
-    /// and update the backed _current list accordingly. This method will NOT parent a non-child
+    /// Called by HandManager.OnAnyDragEnd for the primary card on failed drop.
+    /// Reparents the card to the hand view and animates it to its slot.
     /// </summary>
-    public void MoveCardToIndex(RectTransform cardTransform, int newIndex)
+    public void ReturnCard(Card.CardId id)
     {
-        if (cardTransform == null || _handView == null) return;
+        if (!_dragging.Remove(id)) return;
+        if (_cardRects.TryGetValue(id, out var rt))
+            ReparentToHand(id, rt);
+        _insertionHint = -1;
+        RefreshLayout(_returnSpeed);
+    }
 
-        // Require the caller to pass a card that is already parented to the hand.
-        if (cardTransform.parent != _handView)
+    /// <summary>
+    /// Called by GroupDragHandler for follower cards on failed drop or hand-drop.
+    /// Reparents each card and animates all back in one RefreshLayout call.
+    /// </summary>
+    public void ReturnCards(IEnumerable<Card.CardId> ids)
+    {
+        bool any = false;
+        foreach (var id in ids)
         {
-            Debug.LogWarning("[HandManager] MoveCardToIndex expects the card to be a direct child of the hand. ");
-            return;
+            if (!_dragging.Remove(id)) continue;
+            any = true;
+            if (_cardRects.TryGetValue(id, out var rt))
+                ReparentToHand(id, rt);
+        }
+        if (!any) return;
+        _insertionHint = -1;
+        RefreshLayout(_returnSpeed);
+    }
+
+    // Reparent a card back into the hand at the correct sibling index so render
+    // order matches _order — without this, SetParent appends at the end and the
+    // card renders on top of all other hand cards.
+    private void ReparentToHand(Card.CardId id, RectTransform rt)
+    {
+        rt.SetParent(_handView, worldPositionStays: true);
+
+        int siblingIndex = 0;
+        foreach (var orderId in _order)
+        {
+            if (orderId.Equals(id)) break;
+            if (_cardRects.TryGetValue(orderId, out var other) && other.parent == _handView)
+                siblingIndex++;
+        }
+        rt.SetSiblingIndex(siblingIndex);
+    }
+
+    // ── Hover ────────────────────────────────────────────────────────────────
+
+    private void OnAnyHoverChanged(Card.CardId id, bool hovered)
+    {
+        if (!_cardRects.ContainsKey(id)) return;
+        if (hovered) _hovered.Add(id); else _hovered.Remove(id);
+        RefreshLayout(_layoutSpeed);
+    }
+
+    // ── Selection ────────────────────────────────────────────────────────────
+
+    private void OnSelectionChanged(IReadOnlyList<Card.CardId> _) =>
+        RefreshLayout(_layoutSpeed);
+
+    // ── Commit ───────────────────────────────────────────────────────────────
+
+    private void OnSelectionCommitted(IReadOnlyList<Card.CardId> committed)
+    {
+        foreach (var id in committed)
+        {
+            _order.Remove(id);
+            _dragging.Remove(id);
+            _hovered.Remove(id);
+            if (_cardRects.TryGetValue(id, out var rt))
+            {
+                PlayCardVisual(rt);
+                _cardRects.Remove(id);
+            }
+        }
+        _insertionHint = -1;
+        RefreshLayout(_layoutSpeed);
+    }
+
+    private void PlayCardVisual(RectTransform rt)
+    {
+        rt.localRotation = Quaternion.identity;
+        var img = rt.GetComponent<Image>();
+        if (img != null) img.raycastTarget = false;
+
+        var root = _canvas != null ? _canvas.rootCanvas.transform : null;
+        if (root != null)
+        {
+            rt.SetParent(root, true);
+            // Place played card behind the hand's root-canvas ancestor.
+            Transform handRoot = _handView;
+            while (handRoot.parent != null && handRoot.parent != root)
+                handRoot = handRoot.parent;
+            if (handRoot.parent == root)
+                rt.SetSiblingIndex(handRoot.GetSiblingIndex());
+        }
+    }
+
+    // ── Hand-drop return ─────────────────────────────────────────────────────
+
+    private void OnCardReturnedToHand(CardDrag drag)
+    {
+        var card = drag.GetComponent<Card>();
+        if (card == null || !_cardRects.ContainsKey(card.Id)) return;
+
+        _dragging.Remove(card.Id);
+
+        // Reorder to the current insertion hint, or keep at original position.
+        int currentIdx = _order.IndexOf(card.Id);
+        if (_insertionHint >= 0 && currentIdx != _insertionHint)
+        {
+            _order.RemoveAt(currentIdx);
+            int target = Mathf.Clamp(_insertionHint, 0, _order.Count);
+            _order.Insert(target, card.Id);
         }
 
-        int currentIndex = cardTransform.GetSiblingIndex();
+        _insertionHint = -1;
 
-        // Clamp target against current child count, excluding the moving card.
-        int max = _handView.childCount - 1;
-        newIndex = Mathf.Clamp(newIndex, 0, max);
+        if (_cardRects.TryGetValue(card.Id, out var rt))
+            ReparentToHand(card.Id, rt);
 
-        // Account for removal shifting indices when moving forward.
-        if (newIndex > currentIndex) newIndex--;
-        cardTransform.SetSiblingIndex(newIndex);
+        RefreshLayout(_returnSpeed);
+    }
 
-        // Rebuild backing list to reflect child order
-        _current.Clear();
-        for (int i = 0; i < _handView.childCount; i++)
+    // ── Layout ───────────────────────────────────────────────────────────────
+
+    private void RefreshLayout(float speed)
+    {
+        // Build visible list (exclude dragging cards).
+        var visible = new List<Card.CardId>(_order.Count);
+        foreach (var id in _order)
+            if (!_dragging.Contains(id)) visible.Add(id);
+
+        int n     = visible.Count;
+        int slots = _insertionHint >= 0 ? n + 1 : n; // +1 gap slot when hint active
+
+        int si = 0; // slot index (may skip the gap)
+        for (int vi = 0; vi < n; vi++, si++)
         {
-            var child = _handView.GetChild(i);
-            var card = child.GetComponent<Card>();
-            if (card != null)
-                _current.Add(card.Id);
-        }
+            if (_insertionHint >= 0 && si == _insertionHint) si++; // skip gap slot
 
-        RelayoutCurrentHand();
+            var id = visible[vi];
+            if (!_cardRects.TryGetValue(id, out var rt)) continue;
+
+            var target = new Vector2(ComputeSlotX(si, slots), GetYTarget(id));
+            AnimateCard(id, rt, target, speed);
+        }
+    }
+
+    private void SnapLayout()
+    {
+        var visible = new List<Card.CardId>(_order.Count);
+        foreach (var id in _order)
+            if (!_dragging.Contains(id)) visible.Add(id);
+
+        int n = visible.Count;
+        for (int i = 0; i < n; i++)
+        {
+            var id = visible[i];
+            if (_cardRects.TryGetValue(id, out var rt))
+            {
+                rt.anchoredPosition = new Vector2(ComputeSlotX(i, n), GetYTarget(id));
+                rt.localRotation    = Quaternion.identity;
+            }
+        }
+    }
+
+    private float ComputeSlotX(int slotIndex, int totalSlots)
+    {
+        if (totalSlots <= 0) return 0f;
+        float cardWidth      = GetCardWidth();
+        float containerWidth = _handView.rect.width;
+        if (containerWidth <= 1f) return 0f; // layout not ready
+
+        float spacing    = ComputeSpacing(totalSlots, cardWidth, containerWidth);
+        float step       = cardWidth + spacing;
+        float totalWidth = cardWidth + step * (totalSlots - 1);
+        float startX     = -totalWidth / 2f + cardWidth / 2f;
+        return startX + slotIndex * step;
+    }
+
+    private float ComputeSpacing(int count, float cardWidth, float containerWidth)
+    {
+        if (count <= 1) return 0f;
+        float fitSpacing = (containerWidth - cardWidth * count) / (count - 1);
+        float minSpacing = -(cardWidth * (1f - _minCardVisible));
+        return Mathf.Max(Mathf.Min(_spacing, fitSpacing), minSpacing);
+    }
+
+    private float GetCardWidth()
+    {
+        foreach (var rt in _cardRects.Values)
+            if (rt != null && rt.rect.width > 1f) return rt.rect.width;
+        return _fallbackCardSize.x;
+    }
+
+    private float GetYTarget(Card.CardId id)
+    {
+        if (SelectionManager.Instance.Staged.Contains(id)) return _selectedYOffset;
+        if (_hovered.Contains(id))                          return _hoverYOffset;
+        return 0f;
+    }
+
+    // ── Animation ────────────────────────────────────────────────────────────
+
+    private void AnimateCard(Card.CardId id, RectTransform rt, Vector2 target, float speed)
+    {
+        if (_moveRoutines.TryGetValue(id, out var existing) && existing != null)
+            StopCoroutine(existing);
+        _moveRoutines[id] = StartCoroutine(LerpCard(rt, target, speed));
+    }
+
+    private static IEnumerator LerpCard(RectTransform rt, Vector2 target, float speed)
+    {
+        while (rt != null)
+        {
+            bool posSettled = Vector2.Distance(rt.anchoredPosition, target) < 0.5f;
+            bool rotSettled = Quaternion.Angle(rt.localRotation, Quaternion.identity) < 0.5f;
+            if (posSettled && rotSettled) break;
+
+            rt.anchoredPosition = Vector2.Lerp(rt.anchoredPosition, target,       Time.deltaTime * speed);
+            rt.localRotation    = Quaternion.Lerp(rt.localRotation, Quaternion.identity, Time.deltaTime * speed);
+            yield return null;
+        }
+        if (rt != null)
+        {
+            rt.anchoredPosition = target;
+            rt.localRotation    = Quaternion.identity;
+        }
     }
 }
-
-/*
- * Unity lifecycle cheat-sheet for this component:
- *
- * Awake() — runs first, before Start(). Use it to cache component refs.
- * Start() — runs on the first enabled frame. Use it to initialize content (deal).
- * Update() — runs every frame. Here we watch for runtime inspector tweaks (size/seed/layout).
- * OnValidate() — (editor only) runs when values change in the inspector; lets you preview layout without Play.
- */
