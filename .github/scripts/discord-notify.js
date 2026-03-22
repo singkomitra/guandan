@@ -1,7 +1,7 @@
 const https = require('https');
 const fs = require('fs');
 
-const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
+const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN?.trim();
 const PR_CHANNEL = process.env.DISCORD_PR_CHANNEL_ID;
 const DEPLOY_CHANNEL = process.env.DISCORD_DEPLOYMENTS_CHANNEL_ID;
 const ISSUES_CHANNEL = process.env.DISCORD_ISSUES_CHANNEL_ID;
