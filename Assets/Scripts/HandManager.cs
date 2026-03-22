@@ -276,6 +276,14 @@ public class HandManager : MonoBehaviour
         var img = cardTransform.GetComponent<Image>();
         if (img != null) img.raycastTarget = false;
 
+        // Render played card behind the hand by inserting it just before the hand's
+        // top-level ancestor in the root canvas, so it never covers hand cards.
+        Transform handRoot = _handView;
+        while (handRoot.parent != null && handRoot.parent != cardTransform.parent)
+            handRoot = handRoot.parent;
+        if (handRoot.parent == cardTransform.parent)
+            cardTransform.SetSiblingIndex(handRoot.GetSiblingIndex());
+
         RelayoutCurrentHand();
     }
 
