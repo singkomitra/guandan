@@ -101,3 +101,8 @@ InitTestScene*.unity*
 # Unity upgrade logs
 UpgradeLog*.htm
 UpgradeLog*.html
+
+# Packages files
+Mirror
+ScriptTemplates
+TextMesh Pro
