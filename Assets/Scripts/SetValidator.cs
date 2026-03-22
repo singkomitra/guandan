@@ -1,8 +1,9 @@
 using System;
 using System.Collections.Generic;
+using UnityEngine;
 
 /// <summary>
-/// Pure logic class — zero Unity dependencies.
+/// Pure logic class — zero Unity dependencies except Debug logging.
 /// Single source of truth for all Guandan set and bomb rules.
 /// Unit-testable with plain NUnit, no scene required.
 /// </summary>
@@ -22,12 +23,22 @@ public static class SetValidator
         JokerBomb
     }
 
+    public enum FailCode
+    {
+        None,
+        NoCardsSelected,
+        NotAValidSet,
+        WrongSetType,   // must match the required set type
+        NotYourTurn,
+    }
+
     public class ValidationResult
     {
-        public bool    IsValid;
-        public SetType Type;
-        public string  Description;
-        public string  FailReason;
+        public bool     IsValid;
+        public SetType  Type;
+        public FailCode Code;
+        public string   Description;
+        public string   FailReason;
     }
 
     /// <summary>
@@ -54,13 +65,23 @@ public static class SetValidator
         GameContext context = null)
     {
         if (cards.Count == 0)
-            return Fail("No cards selected");
+        {
+            Debug.Log("[SetValidator] Validate: no cards selected.");
+            return Fail(FailCode.NoCardsSelected, "No cards selected");
+        }
 
         var trumpRank = context?.TrumpRank ?? Card.Rank.Two;
+        Debug.Log($"[SetValidator] Validate: {cards.Count} card(s), trump={trumpRank}");
+
         var result = TryIdentify(cards, trumpRank);
 
         if (result == null)
-            return Fail("Not a valid Guandan set");
+        {
+            Debug.Log("[SetValidator] Validate: not a valid Guandan set.");
+            return Fail(FailCode.NotAValidSet, "Not a valid Guandan set");
+        }
+
+        Debug.Log($"[SetValidator] Identified: {result.Type} — {result.Description}");
 
         if (context != null)
         {
@@ -69,12 +90,14 @@ public static class SetValidator
                 result.Type != context.RequiredType.Value &&
                 !IsBomb(result.Type))
             {
-                return Fail($"Must play a {FriendlyTypeName(context.RequiredType.Value)} or a bomb");
+                Debug.Log($"[SetValidator] Wrong type: need {context.RequiredType.Value}, got {result.Type}.");
+                return Fail(FailCode.WrongSetType, $"Must play a {FriendlyTypeName(context.RequiredType.Value)} or a bomb");
             }
 
             // TODO: implement MustBeat comparison (beat-previous check)
         }
 
+        Debug.Log($"[SetValidator] Valid: {result.Type} — {result.Description}");
         return result;
     }
 
@@ -391,6 +414,6 @@ public static class SetValidator
     private static ValidationResult Ok(SetType type, string desc) =>
         new ValidationResult { IsValid = true, Type = type, Description = desc };
 
-    private static ValidationResult Fail(string reason) =>
-        new ValidationResult { IsValid = false, FailReason = reason };
+    private static ValidationResult Fail(FailCode code, string reason = null) =>
+        new ValidationResult { IsValid = false, Code = code, FailReason = reason };
 }
