@@ -26,6 +26,12 @@ public class LobbyManager : NetworkBehaviour
             lobbyUI.UpdateSlots(GetAllPlayers());
     }
 
+    [ClientRpc]
+    public void RpcRefreshPlayerSlots()
+    {
+        RefreshPlayerSlots();
+    }
+
     public static List<Player> GetAllPlayers()
     {
         var players = new List<Player>();

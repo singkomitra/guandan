@@ -50,10 +50,10 @@ public class LobbyUI : MonoBehaviour
 
     void OnLeaveClicked()
     {
-        if (NetworkServer.active)
-            NetworkManager.singleton.StopHost();
-        else
-            NetworkManager.singleton.StopClient();
+        if (NetworkClient.localPlayer != null &&
+            NetworkClient.localPlayer.TryGetComponent(out Player localPlayer))
+            localPlayer.CmdLeave();
+        ((GuandanNetworkManager)NetworkManager.singleton).Stop();
     }
 
     // Called by LobbyManager whenever player state changes

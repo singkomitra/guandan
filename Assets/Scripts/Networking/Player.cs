@@ -31,6 +31,14 @@ public class Player : NetworkBehaviour
     [Command]
     public void CmdSetReady(bool ready) => isReady = ready;
 
+    [Command]
+    public void CmdLeave()
+    {
+        Debug.Log($"[Server] Player {playerName} (connId={connectionToClient.connectionId}) is leaving.");
+        if (LobbyManager.Instance != null)
+            LobbyManager.Instance.RefreshPlayerSlots();
+    }
+
     void OnReadyChanged(bool _, bool __)
         => LobbyManager.Instance?.RefreshPlayerSlots();
 }

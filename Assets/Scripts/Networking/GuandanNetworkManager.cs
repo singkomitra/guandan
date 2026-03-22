@@ -14,6 +14,8 @@ public class GuandanNetworkManager : NetworkManager
     {
         base.OnServerDisconnect(conn);
         Debug.Log($"[Server] Client disconnected — connId={conn.connectionId}, total={NetworkServer.connections.Count - 1}");
+        if (LobbyManager.Instance != null)
+            LobbyManager.Instance.RpcRefreshPlayerSlots();
     }
 
     public override void OnServerReady(NetworkConnectionToClient conn)
@@ -51,7 +53,8 @@ public class GuandanNetworkManager : NetworkManager
     // Method to stop
     public void Stop()
     {
-        base.StopHost();
-        base.StopClient();
+        if (mode == NetworkManagerMode.Host)        StopHost();
+        else if (mode == NetworkManagerMode.ClientOnly) StopClient();
+        else if (mode == NetworkManagerMode.ServerOnly)  StopServer();
     }
 }

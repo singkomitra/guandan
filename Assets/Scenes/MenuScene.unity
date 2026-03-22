@@ -1600,7 +1600,7 @@ MonoBehaviour:
   headlessStartMode: 0
   editorAutoStart: 0
   sendRate: 60
-  offlineScene: 
+  offlineScene: Assets/Scenes/MenuScene.unity
   onlineScene: 
   offlineSceneLoadDelay: 0
   transport: {fileID: 702014925}
