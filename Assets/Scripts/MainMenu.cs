@@ -20,8 +20,8 @@ public class MainMenu : MonoBehaviour
     {
         if (networkManager != null)
         {
+            networkManager.onlineScene = "GameScene";
             networkManager.StartHost();
-            SceneManager.LoadScene("GameScene");
         }
     }
 

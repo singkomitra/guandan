@@ -3,34 +3,42 @@ using Mirror;
 
 public class GuandanNetworkManager : NetworkManager
 {
+    // SERVER-SIDE: logs appear in the host's console
     public override void OnServerConnect(NetworkConnectionToClient conn)
     {
         base.OnServerConnect(conn);
-        Debug.Log("Client connected: " + conn.connectionId);
+        Debug.Log($"[Server] Client connected — connId={conn.connectionId}, total={NetworkServer.connections.Count}");
     }
 
     public override void OnServerDisconnect(NetworkConnectionToClient conn)
     {
         base.OnServerDisconnect(conn);
-        Debug.Log("Client disconnected: " + conn.connectionId);
+        Debug.Log($"[Server] Client disconnected — connId={conn.connectionId}, total={NetworkServer.connections.Count - 1}");
     }
 
+    public override void OnServerReady(NetworkConnectionToClient conn)
+    {
+        base.OnServerReady(conn);
+        Debug.Log($"[Server] Client ready — connId={conn.connectionId}");
+    }
+
+    public override void OnServerAddPlayer(NetworkConnectionToClient conn)
+    {
+        base.OnServerAddPlayer(conn);
+        Debug.Log($"[Server] Player spawned for connId={conn.connectionId}");
+    }
+
+    // CLIENT-SIDE: logs appear in the joining client's console
     public override void OnClientConnect()
     {
         base.OnClientConnect();
-        Debug.Log("Connected to server");
+        Debug.Log("[Client] Connected to server");
     }
 
     public override void OnClientDisconnect()
     {
         base.OnClientDisconnect();
-        Debug.Log("Disconnected from server");
-    }
-
-    // Method to start as host
-    public void StartHost()
-    {
-        base.StartHost();
+        Debug.Log("[Client] Disconnected from server");
     }
 
     // Method to start as client
