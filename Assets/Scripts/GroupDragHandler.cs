@@ -89,7 +89,7 @@ public class GroupDragHandler : MonoBehaviour
         if (card == null) return;
 
         var staged = SelectionManager.Instance.Staged;
-        if (staged.Count <= 1) return; // primary only — nothing to coordinate
+        if (staged.Count == 0) return; // nothing staged to follow
 
         _activeDrag = drag;
         _followers.Clear();
