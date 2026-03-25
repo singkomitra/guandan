@@ -16,14 +16,11 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Get PR diff
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh pr diff ${{ github.event.pull_request.number }} > pr.diff
+        run: gh pr diff ${{ github.event.pull_request.number }} > pr.diff
 
       - name: Review with Claude
         env:
@@ -31,9 +28,14 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::ANTHROPIC_API_KEY secret is not set"
+            exit 1
+          fi
+
           DIFF_SIZE=$(wc -c < pr.diff)
           if [ "$DIFF_SIZE" -gt 100000 ]; then
-            DIFF=$(head -c 100000 pr.diff)
+            DIFF=$(head -c 100000 pr.diff | head -n -1)
             echo "Warning: diff truncated to 100KB"
           else
             DIFF=$(cat pr.diff)
@@ -48,7 +50,7 @@ jobs:
               max_tokens: 4096,
               messages: [{
                 role: "user",
-                content: ("You are a senior software engineer reviewing a pull request for a Unity multiplayer card game called Guandan.\n\nPR Title: " + $title + "\n\nPR Description:\n" + $body + "\n\nDiff:\n```diff\n" + $diff + "\n```\n\nProvide a concise code review. Focus on:\n- Correctness and potential bugs\n- Code quality and Unity/C# best practices\n- Any obvious issues or improvements\n\nFormat your response as markdown. Be direct and specific. If the code looks good, say so briefly.")
+                content: ("You are a senior software engineer reviewing a pull request for a Unity multiplayer card game called Guandan.\n\nPR Title: " + $title + "\n\nPR Description:\n" + $body + "\n\nDiff:\n```diff\n" + $diff + "\n```\n\nRespond ONLY with raw valid JSON (no markdown fences) in this exact format:\n{\n  \"summary\": \"Overall review as markdown. Cover design, architecture, and security concerns.\",\n  \"comments\": [\n    {\n      \"path\": \"Assets/Scripts/Example.cs\",\n      \"line\": 42,\n      \"body\": \"Inline comment as markdown\"\n    }\n  ]\n}\n\nFor inline comments:\n- Only reference files and line numbers that appear in the diff\n- Use new file line numbers (the + side)\n- Leave comments as [] if there are no line-specific issues\n- Be specific and actionable")
               }]
             }')
 
@@ -61,25 +63,70 @@ jobs:
           HTTP_CODE=$(echo "$RESPONSE" | tail -1)
           RESPONSE_BODY=$(echo "$RESPONSE" | head -n -1)
 
-          echo "HTTP status: $HTTP_CODE"
-          echo "Response: $RESPONSE_BODY"
+          if [ "${ACTIONS_STEP_DEBUG}" = "true" ]; then
+            echo "HTTP status: $HTTP_CODE"
+            echo "Response: $RESPONSE_BODY"
+          fi
 
           if [ "$HTTP_CODE" != "200" ]; then
             ERROR_MSG=$(echo "$RESPONSE_BODY" | jq -r '.error.message // "Unknown error"')
-            REVIEW="API error ($HTTP_CODE): $ERROR_MSG"
-          else
-            REVIEW=$(echo "$RESPONSE_BODY" | jq -r '.content[0].text')
+            echo "::error::Claude API call failed ($HTTP_CODE): $ERROR_MSG"
+            exit 1
           fi
 
-          echo "REVIEW<<EOF" >> $GITHUB_ENV
-          echo "$REVIEW" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
+          echo "$RESPONSE_BODY" | jq -r '.content[0].text' > claude_response.json
 
-      - name: Post review comment
+      - name: Post review
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          printf '## Claude Code Review 🤖\n\n' > review_comment.md
-          echo "$REVIEW" >> review_comment.md
-          printf '\n---\n*Automated review by [Claude](https://claude.ai) · [claude-sonnet-4-6](https://www.anthropic.com)*\n' >> review_comment.md
-          gh pr comment ${{ github.event.pull_request.number }} --body-file review_comment.md
+          OWNER_REPO="${{ github.repository }}"
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+
+          # Validate Claude returned JSON
+          if ! jq empty claude_response.json 2>/dev/null; then
+            echo "::warning::Claude did not return valid JSON, posting as plain comment"
+            printf '## Claude Code Review\n\n' > comment.md
+            cat claude_response.json >> comment.md
+            gh pr comment "$PR_NUMBER" --body-file comment.md
+            exit 0
+          fi
+
+          SUMMARY=$(jq -r '.summary' claude_response.json)
+          COMMENT_COUNT=$(jq '.comments | length' claude_response.json)
+
+          # Always post a general comment with the summary
+          printf '## Claude Code Review\n\n%s\n\n---\n*Automated review by [Claude](https://claude.ai) · claude-sonnet-4-6*\n' "$SUMMARY" > summary.md
+          gh pr comment "$PR_NUMBER" --body-file summary.md
+
+          # Post inline comments via the reviews API if any exist
+          if [ "$COMMENT_COUNT" -gt 0 ]; then
+            REVIEW_PAYLOAD=$(jq -n \
+              --argjson data "$(cat claude_response.json)" \
+              '{
+                event: "COMMENT",
+                comments: [$data.comments[] | {
+                  path: .path,
+                  line: .line,
+                  side: "RIGHT",
+                  body: .body
+                }]
+              }')
+
+            REVIEW_RESPONSE=$(echo "$REVIEW_PAYLOAD" | curl -s -w "\n%{http_code}" \
+              -X POST \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "Content-Type: application/json" \
+              "https://api.github.com/repos/$OWNER_REPO/pulls/$PR_NUMBER/reviews" \
+              -d @-)
+
+            REVIEW_HTTP=$(echo "$REVIEW_RESPONSE" | tail -1)
+
+            if [ "$REVIEW_HTTP" != "200" ]; then
+              echo "::warning::Inline comments failed ($REVIEW_HTTP) — summary comment was already posted"
+              if [ "${ACTIONS_STEP_DEBUG}" = "true" ]; then
+                echo "$REVIEW_RESPONSE" | head -n -1
+              fi
+            fi
+          fi
