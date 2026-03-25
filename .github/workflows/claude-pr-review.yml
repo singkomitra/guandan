@@ -79,15 +79,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cat > review_comment.md << 'HEADER'
-## Claude Code Review 🤖
-
-HEADER
+          printf '## Claude Code Review 🤖\n\n' > review_comment.md
           echo "$REVIEW" >> review_comment.md
-          cat >> review_comment.md << 'FOOTER'
-
----
-*Automated review by [Claude](https://claude.ai) · [claude-sonnet-4-6](https://www.anthropic.com)*
-FOOTER
-
+          printf '\n---\n*Automated review by [Claude](https://claude.ai) · [claude-sonnet-4-6](https://www.anthropic.com)*\n' >> review_comment.md
           gh pr comment ${{ github.event.pull_request.number }} --body-file review_comment.md
