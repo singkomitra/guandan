@@ -1,0 +1,68 @@
+name: Claude PR Review
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get PR diff
+        id: diff
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr diff ${{ github.event.pull_request.number }} > pr.diff
+          echo "diff_size=$(wc -c < pr.diff)" >> $GITHUB_OUTPUT
+
+      - name: Review with Claude
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          DIFF=$(cat pr.diff)
+          PAYLOAD=$(jq -n \
+            --arg title "$PR_TITLE" \
+            --arg body "$PR_BODY" \
+            --arg diff "$DIFF" \
+            '{
+              model: "claude-sonnet-4-6",
+              max_tokens: 4096,
+              messages: [{
+                role: "user",
+                content: ("You are a senior software engineer reviewing a pull request for a Unity multiplayer card game called Guandan.\n\nPR Title: " + $title + "\n\nPR Description:\n" + $body + "\n\nDiff:\n```diff\n" + $diff + "\n```\n\nProvide a concise code review. Focus on:\n- Correctness and potential bugs\n- Code quality and Unity/C# best practices\n- Any obvious issues or improvements\n\nFormat your response as markdown. Be direct and specific. If the code looks good, say so briefly.")
+              }]
+            }')
+
+          RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d "$PAYLOAD")
+
+          REVIEW=$(echo "$RESPONSE" | jq -r '.content[0].text')
+
+          echo "REVIEW<<EOF" >> $GITHUB_ENV
+          echo "$REVIEW" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+      - name: Post review comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BODY="## Claude Code Review 🤖
+
+          ${REVIEW}
+
+          ---
+          *Automated review by [Claude](https://claude.ai) · [claude-sonnet-4-6](https://www.anthropic.com)*"
+
+          gh pr comment ${{ github.event.pull_request.number }} --body "$BODY"
