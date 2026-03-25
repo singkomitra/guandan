@@ -1,0 +1,135 @@
+name: Claude PR Review
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+concurrency:
+  group: pr-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get PR diff
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr diff ${{ github.event.pull_request.number }} > pr.diff
+
+      - name: Review with Claude
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::ANTHROPIC_API_KEY secret is not set"
+            exit 1
+          fi
+
+          DIFF_SIZE=$(wc -c < pr.diff)
+          if [ "$DIFF_SIZE" -gt 100000 ]; then
+            # sed '$d' drops the last (potentially incomplete) line after byte truncation
+            DIFF=$(head -c 100000 pr.diff | sed '$d')
+            echo "Warning: diff truncated to 100KB"
+          else
+            DIFF=$(cat pr.diff)
+          fi
+
+          PAYLOAD=$(jq -n \
+            --arg title "$PR_TITLE" \
+            --arg body "$PR_BODY" \
+            --arg diff "$DIFF" \
+            '{
+              model: "claude-sonnet-4-6",
+              max_tokens: 4096,
+              messages: [{
+                role: "user",
+                content: ("You are a senior software engineer reviewing a pull request for a Unity multiplayer card game called Guandan.\n\nPR Title: " + $title + "\n\nPR Description:\n" + $body + "\n\nDiff:\n```diff\n" + $diff + "\n```\n\nRespond ONLY with raw valid JSON (no markdown fences) in this exact format:\n{\n  \"approved\": true,\n  \"summary\": \"2-4 sentence high-level assessment only. Cover overall approach, design, or security concerns. Do NOT repeat issues already called out in inline comments.\",\n  \"comments\": [\n    {\n      \"path\": \"Assets/Scripts/Example.cs\",\n      \"line\": 42,\n      \"body\": \"Inline comment as markdown\"\n    }\n  ]\n}\n\nSet approved to true only if there are no blocking issues (bugs, security vulnerabilities, or correctness problems). Non-blocking suggestions and style notes are fine to approve.\n\nFor inline comments:\n- Only reference files and line numbers that appear in the diff\n- Use new file line numbers (the + side)\n- Leave comments as [] if there are no line-specific issues\n- Be specific and actionable\n\nKeep the summary brief — inline comments handle the details.")
+              }]
+            }')
+
+          curl -s -o response_body.json -w "%{http_code}" https://api.anthropic.com/v1/messages \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d "$PAYLOAD" > http_code.txt
+
+          HTTP_CODE=$(cat http_code.txt)
+          RESPONSE_BODY=$(cat response_body.json)
+
+          if [ "${ACTIONS_STEP_DEBUG}" = "true" ]; then
+            echo "HTTP status: $HTTP_CODE"
+            echo "Response: $RESPONSE_BODY"
+          fi
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            ERROR_MSG=$(jq -r '.error.message // "Unknown error"' response_body.json)
+            echo "::error::Claude API call failed ($HTTP_CODE): $ERROR_MSG"
+            exit 1
+          fi
+
+          jq -r '.content[0].text' response_body.json > claude_response.json
+
+      - name: Post review
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          OWNER_REPO="${{ github.repository }}"
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+
+          # Validate Claude returned JSON
+          if ! jq empty claude_response.json 2>/dev/null; then
+            echo "::warning::Claude did not return valid JSON, posting as plain comment"
+            printf '## Claude Code Review\n\n' > comment.md
+            cat claude_response.json >> comment.md
+            gh pr comment "$PR_NUMBER" --body-file comment.md
+            exit 0
+          fi
+
+          APPROVED=$(jq -r '.approved' claude_response.json)
+          SUMMARY=$(jq -r '.summary' claude_response.json)
+          COMMENT_COUNT=$(jq '.comments | length' claude_response.json)
+
+          post_review() {
+            local payload_file=$1
+            local label=$2
+            curl -s -o "${label}_response.json" -w "%{http_code}" \
+              -X POST \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "Content-Type: application/json" \
+              "https://api.github.com/repos/$OWNER_REPO/pulls/$PR_NUMBER/reviews" \
+              -d "@$payload_file" > "${label}_http_code.txt"
+            local http_code
+            http_code=$(cat "${label}_http_code.txt")
+            if [ "$http_code" != "200" ]; then
+              echo "::error::${label} failed (HTTP $http_code) — re-run the workflow to retry"
+              cat "${label}_response.json"
+              echo "> ❌ ${label} failed (HTTP $http_code). Re-run the workflow to retry." >> $GITHUB_STEP_SUMMARY
+            fi
+          }
+
+          # 1. Summary — posted as a general PR comment
+          { printf '## Claude Code Review\n\n'; echo "$SUMMARY"; printf '\n---\n*Automated review by [Claude](https://claude.ai) · claude-sonnet-4-6*\n'; } > summary.md
+          gh pr comment "$PR_NUMBER" --body-file summary.md
+
+          # 2. Inline comments — independent of summary and approval
+          if [ "$COMMENT_COUNT" -gt 0 ]; then
+            jq -n --argjson data "$(cat claude_response.json)" \
+              '{event: "COMMENT", body: "", comments: [$data.comments[] | {path: .path, line: .line, side: "RIGHT", body: .body}]}' \
+              > inline_payload.json
+            post_review inline_payload.json "Inline"
+          fi
+
+          # 3. Approval — independent of summary and inline comments
+          if [ "$APPROVED" = "true" ]; then
+            jq -n '{"event": "APPROVE", "body": "", "comments": []}' > approve_payload.json
+            post_review approve_payload.json "Approval"
+          fi
