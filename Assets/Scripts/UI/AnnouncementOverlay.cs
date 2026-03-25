@@ -2,7 +2,6 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.UI;
 using TMPro;
 
 // ---------------------------------------------------------------------------
@@ -177,32 +176,12 @@ public class AnnouncementOverlay : MonoBehaviour
 
         if (_canvasGroup != null)
             _canvasGroup.alpha = 0f;
-
-        SelectionManager.Instance.SelectionFailed += OnSelectionFailed;
     }
 
     private void OnDestroy()
     {
         if (Instance == this)
-        {
-            SelectionManager.Instance.SelectionFailed -= OnSelectionFailed;
             Instance = null;
-        }
-    }
-
-    // -----------------------------------------------------------------------
-    // SelectionManager integration
-    // -----------------------------------------------------------------------
-
-    private void OnSelectionFailed(SetValidator.ValidationResult result)
-    {
-        var (type, message) = result.Code switch
-        {
-            SetValidator.FailCode.NotYourTurn  => (AnnouncementType.Error,   "Not Your Turn"),
-            SetValidator.FailCode.WrongSetType => (AnnouncementType.Warning, result.FailReason),
-            _                                  => (AnnouncementType.Error,   "Not Valid"),
-        };
-        Interrupt(type, message);
     }
 
     // -----------------------------------------------------------------------

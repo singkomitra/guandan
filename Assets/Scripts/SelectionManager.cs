@@ -32,7 +32,7 @@ public class SelectionManager
     public event Action SelectionCleared;
 
     /// <summary>Fired when Commit is attempted but SetValidator rejects the set.</summary>
-    public event Action<SetValidator.ValidationResult> SelectionFailed;
+    public event Action<SetValidator.ValidationResult> CommitFailed;
 
     // --- Mutation ---
 
@@ -61,7 +61,7 @@ public class SelectionManager
     /// <summary>
     /// Attempt to play the staged set. Runs SetValidator — the only place validation occurs.
     /// On success: fires SelectionCommitted then resets state.
-    /// On failure: fires SelectionFailed, staged list unchanged.
+    /// On failure: fires CommitFailed, staged list unchanged.
     /// Returns true if the staged set passed validation and was committed.
     /// </summary>
     public bool Commit()
@@ -69,7 +69,7 @@ public class SelectionManager
         if (!IsPlayerTurn)
         {
             if (_staged.Count > 0)
-                SelectionFailed?.Invoke(new SetValidator.ValidationResult { IsValid = false, Code = SetValidator.FailCode.NotYourTurn, FailReason = "Not your turn" });
+                CommitFailed?.Invoke(new SetValidator.ValidationResult { IsValid = false, Code = SetValidator.FailCode.NotYourTurn, FailReason = "Not your turn" });
             return false;
         }
         if (_staged.Count == 0) return false;
@@ -85,7 +85,7 @@ public class SelectionManager
         }
         else
         {
-            SelectionFailed?.Invoke(result);
+            CommitFailed?.Invoke(result);
             return false;
         }
     }
