@@ -35,7 +35,7 @@ jobs:
 
           DIFF_SIZE=$(wc -c < pr.diff)
           if [ "$DIFF_SIZE" -gt 100000 ]; then
-            DIFF=$(head -c 100000 pr.diff | head -n -1)
+            DIFF=$(head -c 100000 pr.diff | sed '$d')
             echo "Warning: diff truncated to 100KB"
           else
             DIFF=$(cat pr.diff)
@@ -50,18 +50,18 @@ jobs:
               max_tokens: 4096,
               messages: [{
                 role: "user",
-                content: ("You are a senior software engineer reviewing a pull request for a Unity multiplayer card game called Guandan.\n\nPR Title: " + $title + "\n\nPR Description:\n" + $body + "\n\nDiff:\n```diff\n" + $diff + "\n```\n\nRespond ONLY with raw valid JSON (no markdown fences) in this exact format:\n{\n  \"summary\": \"Overall review as markdown. Cover design, architecture, and security concerns.\",\n  \"comments\": [\n    {\n      \"path\": \"Assets/Scripts/Example.cs\",\n      \"line\": 42,\n      \"body\": \"Inline comment as markdown\"\n    }\n  ]\n}\n\nFor inline comments:\n- Only reference files and line numbers that appear in the diff\n- Use new file line numbers (the + side)\n- Leave comments as [] if there are no line-specific issues\n- Be specific and actionable")
+                content: ("You are a senior software engineer reviewing a pull request for a Unity multiplayer card game called Guandan.\n\nPR Title: " + $title + "\n\nPR Description:\n" + $body + "\n\nDiff:\n```diff\n" + $diff + "\n```\n\nRespond ONLY with raw valid JSON (no markdown fences) in this exact format:\n{\n  \"summary\": \"2-4 sentence high-level assessment only. Cover overall approach, design, or security concerns. Do NOT repeat issues already called out in inline comments.\",\n  \"comments\": [\n    {\n      \"path\": \"Assets/Scripts/Example.cs\",\n      \"line\": 42,\n      \"body\": \"Inline comment as markdown\"\n    }\n  ]\n}\n\nFor inline comments:\n- Only reference files and line numbers that appear in the diff\n- Use new file line numbers (the + side)\n- Leave comments as [] if there are no line-specific issues\n- Be specific and actionable\n\nKeep the summary brief — inline comments handle the details.")
               }]
             }')
 
-          RESPONSE=$(curl -s -w "\n%{http_code}" https://api.anthropic.com/v1/messages \
+          curl -s -o response_body.json -w "%{http_code}" https://api.anthropic.com/v1/messages \
             -H "x-api-key: $ANTHROPIC_API_KEY" \
             -H "anthropic-version: 2023-06-01" \
             -H "content-type: application/json" \
-            -d "$PAYLOAD")
+            -d "$PAYLOAD" > http_code.txt
 
-          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
-          RESPONSE_BODY=$(echo "$RESPONSE" | head -n -1)
+          HTTP_CODE=$(cat http_code.txt)
+          RESPONSE_BODY=$(cat response_body.json)
 
           if [ "${ACTIONS_STEP_DEBUG}" = "true" ]; then
             echo "HTTP status: $HTTP_CODE"
@@ -69,12 +69,12 @@ jobs:
           fi
 
           if [ "$HTTP_CODE" != "200" ]; then
-            ERROR_MSG=$(echo "$RESPONSE_BODY" | jq -r '.error.message // "Unknown error"')
+            ERROR_MSG=$(jq -r '.error.message // "Unknown error"' response_body.json)
             echo "::error::Claude API call failed ($HTTP_CODE): $ERROR_MSG"
             exit 1
           fi
 
-          echo "$RESPONSE_BODY" | jq -r '.content[0].text' > claude_response.json
+          jq -r '.content[0].text' response_body.json > claude_response.json
 
       - name: Post review
         env:
@@ -96,7 +96,7 @@ jobs:
           COMMENT_COUNT=$(jq '.comments | length' claude_response.json)
 
           # Always post a general comment with the summary
-          printf '## Claude Code Review\n\n%s\n\n---\n*Automated review by [Claude](https://claude.ai) · claude-sonnet-4-6*\n' "$SUMMARY" > summary.md
+          { printf '## Claude Code Review\n\n'; echo "$SUMMARY"; printf '\n---\n*Automated review by [Claude](https://claude.ai) · claude-sonnet-4-6*\n'; } > summary.md
           gh pr comment "$PR_NUMBER" --body-file summary.md
 
           # Post inline comments via the reviews API if any exist
@@ -113,20 +113,18 @@ jobs:
                 }]
               }')
 
-            REVIEW_RESPONSE=$(echo "$REVIEW_PAYLOAD" | curl -s -w "\n%{http_code}" \
+            echo "$REVIEW_PAYLOAD" | curl -s -o review_response.json -w "%{http_code}" \
               -X POST \
               -H "Authorization: Bearer $GH_TOKEN" \
               -H "Accept: application/vnd.github+json" \
               -H "Content-Type: application/json" \
               "https://api.github.com/repos/$OWNER_REPO/pulls/$PR_NUMBER/reviews" \
-              -d @-)
+              -d @- > review_http_code.txt
 
-            REVIEW_HTTP=$(echo "$REVIEW_RESPONSE" | tail -1)
+            REVIEW_HTTP=$(cat review_http_code.txt)
 
             if [ "$REVIEW_HTTP" != "200" ]; then
               echo "::warning::Inline comments failed ($REVIEW_HTTP) — summary comment was already posted"
-              if [ "${ACTIONS_STEP_DEBUG}" = "true" ]; then
-                echo "$REVIEW_RESPONSE" | head -n -1
-              fi
+              echo "> ⚠️ Inline comments could not be posted (HTTP $REVIEW_HTTP)" >> $GITHUB_STEP_SUMMARY
             fi
           fi
