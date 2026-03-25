@@ -42,13 +42,25 @@ jobs:
               }]
             }')
 
-          RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
+          RESPONSE=$(curl -s -w "\n%{http_code}" https://api.anthropic.com/v1/messages \
             -H "x-api-key: $ANTHROPIC_API_KEY" \
             -H "anthropic-version: 2023-06-01" \
             -H "content-type: application/json" \
             -d "$PAYLOAD")
 
-          REVIEW=$(echo "$RESPONSE" | jq -r '.content[0].text')
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+
+          echo "HTTP status: $HTTP_CODE"
+          echo "Response: $BODY"
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "API call failed with status $HTTP_CODE"
+            ERROR_MSG=$(echo "$BODY" | jq -r '.error.message // "Unknown error"')
+            REVIEW="API error ($HTTP_CODE): $ERROR_MSG"
+          else
+            REVIEW=$(echo "$BODY" | jq -r '.content[0].text')
+          fi
 
           echo "REVIEW<<EOF" >> $GITHUB_ENV
           echo "$REVIEW" >> $GITHUB_ENV
