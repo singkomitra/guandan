@@ -4,10 +4,15 @@ on:
   pull_request:
     types: [opened, reopened, synchronize]
 
+concurrency:
+  group: pr-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   review:
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
@@ -15,12 +20,10 @@ jobs:
           fetch-depth: 0
 
       - name: Get PR diff
-        id: diff
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh pr diff ${{ github.event.pull_request.number }} > pr.diff
-          echo "diff_size=$(wc -c < pr.diff)" >> $GITHUB_OUTPUT
 
       - name: Review with Claude
         env:
@@ -28,7 +31,14 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |
-          DIFF=$(cat pr.diff)
+          DIFF_SIZE=$(wc -c < pr.diff)
+          if [ "$DIFF_SIZE" -gt 100000 ]; then
+            DIFF=$(head -c 100000 pr.diff)
+            echo "Warning: diff truncated to 100KB"
+          else
+            DIFF=$(cat pr.diff)
+          fi
+
           PAYLOAD=$(jq -n \
             --arg title "$PR_TITLE" \
             --arg body "$PR_BODY" \
@@ -49,17 +59,16 @@ jobs:
             -d "$PAYLOAD")
 
           HTTP_CODE=$(echo "$RESPONSE" | tail -1)
-          BODY=$(echo "$RESPONSE" | head -n -1)
+          RESPONSE_BODY=$(echo "$RESPONSE" | head -n -1)
 
           echo "HTTP status: $HTTP_CODE"
-          echo "Response: $BODY"
+          echo "Response: $RESPONSE_BODY"
 
           if [ "$HTTP_CODE" != "200" ]; then
-            echo "API call failed with status $HTTP_CODE"
-            ERROR_MSG=$(echo "$BODY" | jq -r '.error.message // "Unknown error"')
+            ERROR_MSG=$(echo "$RESPONSE_BODY" | jq -r '.error.message // "Unknown error"')
             REVIEW="API error ($HTTP_CODE): $ERROR_MSG"
           else
-            REVIEW=$(echo "$BODY" | jq -r '.content[0].text')
+            REVIEW=$(echo "$RESPONSE_BODY" | jq -r '.content[0].text')
           fi
 
           echo "REVIEW<<EOF" >> $GITHUB_ENV
@@ -70,11 +79,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          BODY="## Claude Code Review 🤖
+          cat > review_comment.md << 'HEADER'
+## Claude Code Review 🤖
 
-          ${REVIEW}
+HEADER
+          echo "$REVIEW" >> review_comment.md
+          cat >> review_comment.md << 'FOOTER'
 
-          ---
-          *Automated review by [Claude](https://claude.ai) · [claude-sonnet-4-6](https://www.anthropic.com)*"
+---
+*Automated review by [Claude](https://claude.ai) · [claude-sonnet-4-6](https://www.anthropic.com)*
+FOOTER
 
-          gh pr comment ${{ github.event.pull_request.number }} --body "$BODY"
+          gh pr comment ${{ github.event.pull_request.number }} --body-file review_comment.md
