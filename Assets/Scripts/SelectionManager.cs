@@ -25,8 +25,8 @@ public class SelectionManager
     /// <summary>Fired on every toggle. Carries the current staged list — no validity info.</summary>
     public event Action<IReadOnlyList<Card.CardId>> SelectionChanged;
 
-    /// <summary>Fired after a valid commit. Carries the cards that were played.</summary>
-    public event Action<IReadOnlyList<Card.CardId>> SelectionCommitted;
+    /// <summary>Fired after a valid commit. Carries the cards played and the validated result.</summary>
+    public event Action<IReadOnlyList<Card.CardId>, SetValidator.ValidationResult> SelectionCommitted;
 
     /// <summary>Fired when selection is explicitly cleared (Clear or Pass).</summary>
     public event Action SelectionCleared;
@@ -79,7 +79,7 @@ public class SelectionManager
         {
             var committed = new List<Card.CardId>(_staged);
             _staged.Clear();
-            SelectionCommitted?.Invoke(committed);
+            SelectionCommitted?.Invoke(committed, result);
             SelectionChanged?.Invoke(_staged);
             return true;
         }

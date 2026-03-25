@@ -316,7 +316,7 @@ public class HandManager : MonoBehaviour
 
     // ── Commit ───────────────────────────────────────────────────────────────
 
-    private void OnSelectionCommitted(IReadOnlyList<Card.CardId> committed)
+    private void OnSelectionCommitted(IReadOnlyList<Card.CardId> committed, SetValidator.ValidationResult _)
     {
         foreach (var id in committed)
         {
