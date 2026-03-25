@@ -97,45 +97,39 @@ jobs:
           SUMMARY=$(jq -r '.summary' claude_response.json)
           COMMENT_COUNT=$(jq '.comments | length' claude_response.json)
 
-          if [ "$APPROVED" = "true" ]; then
-            REVIEW_EVENT="APPROVE"
-          else
-            REVIEW_EVENT="COMMENT"
+          post_review() {
+            local payload_file=$1
+            local label=$2
+            curl -s -o "${label}_response.json" -w "%{http_code}" \
+              -X POST \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "Content-Type: application/json" \
+              "https://api.github.com/repos/$OWNER_REPO/pulls/$PR_NUMBER/reviews" \
+              -d "@$payload_file" > "${label}_http_code.txt"
+            local http_code
+            http_code=$(cat "${label}_http_code.txt")
+            if [ "$http_code" != "200" ]; then
+              echo "::error::${label} failed (HTTP $http_code) — re-run the workflow to retry"
+              cat "${label}_response.json"
+              echo "> ❌ ${label} failed (HTTP $http_code). Re-run the workflow to retry." >> $GITHUB_STEP_SUMMARY
+            fi
+          }
+
+          # 1. Summary — posted as a general PR comment
+          { printf '## Claude Code Review\n\n'; echo "$SUMMARY"; printf '\n---\n*Automated review by [Claude](https://claude.ai) · claude-sonnet-4-6*\n'; } > summary.md
+          gh pr comment "$PR_NUMBER" --body-file summary.md
+
+          # 2. Inline comments — independent of summary and approval
+          if [ "$COMMENT_COUNT" -gt 0 ]; then
+            jq -n --argjson data "$(cat claude_response.json)" \
+              '{event: "COMMENT", body: "", comments: [$data.comments[] | {path: .path, line: .line, side: "RIGHT", body: .body}]}' \
+              > inline_payload.json
+            post_review inline_payload.json "Inline"
           fi
 
-          # Build review body
-          { printf '## Claude Code Review\n\n'; echo "$SUMMARY"; printf '\n---\n*Automated review by [Claude](https://claude.ai) · claude-sonnet-4-6*\n'; } > summary.md
-
-          # Post review (with approval if no blocking issues, with inline comments if any)
-          REVIEW_PAYLOAD=$(jq -n \
-            --arg event "$REVIEW_EVENT" \
-            --arg body "$(cat summary.md)" \
-            --argjson data "$(cat claude_response.json)" \
-            '{
-              event: $event,
-              body: $body,
-              comments: [$data.comments[] | {
-                path: .path,
-                line: .line,
-                side: "RIGHT",
-                body: .body
-              }]
-            }')
-
-          echo "$REVIEW_PAYLOAD" > review_payload.json
-          curl -s -o review_response.json -w "%{http_code}" \
-            -X POST \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            -H "Content-Type: application/json" \
-            "https://api.github.com/repos/$OWNER_REPO/pulls/$PR_NUMBER/reviews" \
-            -d @review_payload.json > review_http_code.txt
-
-          REVIEW_HTTP=$(cat review_http_code.txt)
-
-          if [ "$REVIEW_HTTP" != "200" ]; then
-            echo "::warning::Review post failed ($REVIEW_HTTP)"
-            echo "> ⚠️ Review could not be posted (HTTP $REVIEW_HTTP)" >> $GITHUB_STEP_SUMMARY
-            # Fall back to a plain comment
-            gh pr comment "$PR_NUMBER" --body-file summary.md
+          # 3. Approval — independent of summary and inline comments
+          if [ "$APPROVED" = "true" ]; then
+            jq -n '{"event": "APPROVE", "body": "", "comments": []}' > approve_payload.json
+            post_review approve_payload.json "Approval"
           fi
