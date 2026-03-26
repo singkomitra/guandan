@@ -12,6 +12,10 @@ using UnityEngine;
 /// </summary>
 public class TrickManager : MonoBehaviour
 {
+    /// <summary>
+    /// Dev-time default used until DealManager exists to supply the trump rank per deal.
+    /// At that point this field will be set via a method call and the SerializeField removed.
+    /// </summary>
     [SerializeField] private Card.Rank _trumpRank = Card.Rank.Two;
 
     /// <summary>
