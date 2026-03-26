@@ -150,7 +150,10 @@ public static class SetValidator
                  > KeyRankValue(tableSet.Type,   tableSet.KeyRank,   trumpRank);
         }
 
-        // Both non-bombs: must match type
+        // Both non-bombs: must match type.
+        // When called from Validate(), type-mismatch is already caught by the WrongSetType
+        // check above, so this branch is dead in the normal flow. It is kept here so that
+        // direct callers of the standalone Beats() API are handled correctly.
         if (challenger.Type != tableSet.Type) return false;
 
         return KeyRankValue(challenger.Type, challenger.KeyRank, trumpRank)
