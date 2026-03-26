@@ -29,16 +29,19 @@ public static class SetValidator
         NoCardsSelected,
         NotAValidSet,
         WrongSetType,   // must match the required set type
+        DoesNotBeat,    // valid set but does not beat the current table set
         NotYourTurn,
     }
 
     public class ValidationResult
     {
-        public bool     IsValid;
-        public SetType  Type;
-        public FailCode Code;
-        public string   Description;
-        public string   FailReason;
+        public bool      IsValid;
+        public SetType   Type;
+        public FailCode  Code;
+        public string    Description;
+        public string    FailReason;
+        /// <summary>Rank used to compare sets of the same type (e.g. triple rank for Full House, starting rank for Straight).</summary>
+        public Card.Rank KeyRank;
     }
 
     /// <summary>
@@ -94,7 +97,11 @@ public static class SetValidator
                 return Fail(FailCode.WrongSetType, $"Must play a {FriendlyTypeName(context.RequiredType.Value)} or a bomb");
             }
 
-            // TODO: implement MustBeat comparison (beat-previous check)
+            if (context.MustBeat != null && !Beats(result, context.MustBeat, trumpRank))
+            {
+                Debug.Log($"[SetValidator] Does not beat table set: {context.MustBeat.Description}.");
+                return Fail(FailCode.DoesNotBeat, $"Does not beat {context.MustBeat.Description}");
+            }
         }
 
         Debug.Log($"[SetValidator] Valid: {result.Type} — {result.Description}");
@@ -115,6 +122,41 @@ public static class SetValidator
             : $"{cards.Count} card{(cards.Count == 1 ? "" : "s")}";
     }
 
+    /// <summary>
+    /// Returns true when <paramref name="challenger"/> beats <paramref name="tableSet"/>.
+    /// Handles bomb-vs-non-bomb promotion and the full bomb hierarchy.
+    /// Mismatched non-bomb types always return false.
+    /// </summary>
+    public static bool Beats(
+        ValidationResult challenger,
+        ValidationResult tableSet,
+        Card.Rank trumpRank = Card.Rank.Two)
+    {
+        if (challenger == null || tableSet == null)   return false;
+        if (!challenger.IsValid || !tableSet.IsValid) return false;
+
+        bool chalBomb  = IsBomb(challenger.Type);
+        bool tableBomb = IsBomb(tableSet.Type);
+
+        if (chalBomb && !tableBomb) return true;   // bomb always beats any non-bomb
+        if (!chalBomb && tableBomb) return false;  // non-bomb can never beat a bomb
+
+        if (chalBomb) // both bombs: compare strength tier then rank
+        {
+            int cs = BombStrength(challenger.Type);
+            int ts = BombStrength(tableSet.Type);
+            if (cs != ts) return cs > ts;
+            return KeyRankValue(challenger.Type, challenger.KeyRank, trumpRank)
+                 > KeyRankValue(tableSet.Type,   tableSet.KeyRank,   trumpRank);
+        }
+
+        // Both non-bombs: must match type
+        if (challenger.Type != tableSet.Type) return false;
+
+        return KeyRankValue(challenger.Type, challenger.KeyRank, trumpRank)
+             > KeyRankValue(tableSet.Type,   tableSet.KeyRank,   trumpRank);
+    }
+
     // -------------------------------------------------------------------------
     // Core recognizer
     // -------------------------------------------------------------------------
@@ -124,18 +166,18 @@ public static class SetValidator
         int n = cards.Count;
 
         // --- Bombs (can always be played) ---
-        if (TryJokerBomb(cards, out string desc))    return Ok(SetType.JokerBomb, desc);
-        if (n >= 5 && TryStraightFlush(cards, trumpRank, out desc)) return Ok(SetType.StraightFlush, desc);
-        if (n >= 4 && n <= 8 && TryNBomb(cards, n, out desc))       return Ok(NBombType(n), desc);
+        if (TryJokerBomb(cards, out string desc))                        return Identified(SetType.JokerBomb, desc, cards);
+        if (n >= 5 && TryStraightFlush(cards, trumpRank, out desc))      return Identified(SetType.StraightFlush, desc, cards);
+        if (n >= 4 && n <= 8 && TryNBomb(cards, n, out desc))            return Identified(NBombType(n), desc, cards);
 
         // --- Regular sets ---
-        if (n == 1) return Ok(SetType.Single, SingleDesc(cards[0]));
-        if (n == 2 && TryPair(cards, out desc))                         return Ok(SetType.Pair, desc);
-        if (n == 3 && TryTriple(cards, out desc))                       return Ok(SetType.Triple, desc);
-        if (n == 5 && TryFullHouse(cards, out desc))                    return Ok(SetType.FullHouse, desc);
-        if (n >= 5 && TryStraight(cards, out desc))                     return Ok(SetType.Straight, desc);
-        if (n == 6 && TryConsecutiveTriplePairs(cards, out desc))       return Ok(SetType.ConsecutiveTriplePairs, desc);
-        if (n == 6 && TryTripleConsecutivePairs(cards, out desc))       return Ok(SetType.TripleConsecutivePairs, desc);
+        if (n == 1) return Identified(SetType.Single, SingleDesc(cards[0]), cards);
+        if (n == 2 && TryPair(cards, out desc))                          return Identified(SetType.Pair, desc, cards);
+        if (n == 3 && TryTriple(cards, out desc))                        return Identified(SetType.Triple, desc, cards);
+        if (n == 5 && TryFullHouse(cards, out desc))                     return Identified(SetType.FullHouse, desc, cards);
+        if (n >= 5 && TryStraight(cards, out desc))                      return Identified(SetType.Straight, desc, cards);
+        if (n == 6 && TryConsecutiveTriplePairs(cards, out desc))        return Identified(SetType.ConsecutiveTriplePairs, desc, cards);
+        if (n == 6 && TryTripleConsecutivePairs(cards, out desc))        return Identified(SetType.TripleConsecutivePairs, desc, cards);
 
         return null;
     }
@@ -411,8 +453,71 @@ public static class SetValidator
         _                              => type.ToString()
     };
 
-    private static ValidationResult Ok(SetType type, string desc) =>
-        new ValidationResult { IsValid = true, Type = type, Description = desc };
+    private static ValidationResult Identified(SetType type, string desc, IReadOnlyList<Card.CardId> cards) =>
+        new ValidationResult { IsValid = true, Type = type, Description = desc, KeyRank = GetKeyRank(type, cards) };
+
+    /// <summary>Returns the rank used to compare two sets of the same type.</summary>
+    private static Card.Rank GetKeyRank(SetType type, IReadOnlyList<Card.CardId> cards)
+    {
+        switch (type)
+        {
+            case SetType.FullHouse:
+                foreach (var kv in GroupByRank(cards))
+                    if (kv.Value == 3) return kv.Key;
+                return default;
+
+            case SetType.Straight:
+            case SetType.StraightFlush:
+            case SetType.ConsecutiveTriplePairs:
+            case SetType.TripleConsecutivePairs:
+                return SortedByRank(cards)[0].rank;
+
+            case SetType.JokerBomb:
+                return Card.Rank.RedJoker; // irrelevant — JokerBomb always wins
+
+            default:
+                // Single, Pair, Triple, NBombs: all cards share one rank
+                return cards[0].rank;
+        }
+    }
+
+    /// <summary>
+    /// Ordering of bomb types, weakest (1) to strongest (7).
+    /// StraightFlush sits between Bomb5 and Bomb6 per game rules.
+    /// </summary>
+    private static int BombStrength(SetType type) => type switch
+    {
+        SetType.Bomb4         => 1,
+        SetType.Bomb5         => 2,
+        SetType.StraightFlush => 3,
+        SetType.Bomb6         => 4,
+        SetType.Bomb7         => 5,
+        SetType.Bomb8         => 6,
+        SetType.JokerBomb     => 7,
+        _                     => 0
+    };
+
+    /// <summary>
+    /// Integer rank for comparison. Uses 2× scale so trump (= Ace + 1 step) fits between
+    /// Ace (28) and Black Joker (30) without floating-point.
+    /// Scale: Two=4 … Ace=28, Trump=29, BlackJoker=30, RedJoker=32.
+    /// </summary>
+    /// <summary>
+    /// Rank value used for set comparison. Straights and StraightFlushes compare by natural
+    /// starting rank — trump has no elevating effect. All other sets use EffectiveRank.
+    /// </summary>
+    private static int KeyRankValue(SetType type, Card.Rank rank, Card.Rank trumpRank)
+    {
+        if (type == SetType.Straight || type == SetType.StraightFlush)
+            return (int)rank;
+        return EffectiveRank(rank, trumpRank);
+    }
+
+    private static int EffectiveRank(Card.Rank rank, Card.Rank trumpRank)
+    {
+        if (rank == trumpRank) return (int)Card.Rank.Ace * 2 + 1; // 29
+        return (int)rank * 2;
+    }
 
     private static ValidationResult Fail(FailCode code, string reason = null) =>
         new ValidationResult { IsValid = false, Code = code, FailReason = reason };
