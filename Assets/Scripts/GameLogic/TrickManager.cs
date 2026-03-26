@@ -17,6 +17,8 @@ public class TrickManager : MonoBehaviour
     /// <summary>
     /// The set currently on the table that subsequent players must beat.
     /// Null when the trick is open (the leader has not yet played).
+    /// Callers must not hold onto the returned reference across frames;
+    /// it is replaced (not mutated) on every <see cref="StartTrick"/> or commit.
     /// </summary>
     public SetValidator.ValidationResult ControllingSet { get; private set; }
 

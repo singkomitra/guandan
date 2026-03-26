@@ -152,7 +152,11 @@ public class AnnouncementOverlay : MonoBehaviour
     }
 
     /// <summary>In-memory log of every announcement that has been shown.</summary>
-    public static IReadOnlyList<AnnouncementRecord> History => Instance?._history;
+    private static readonly IReadOnlyList<AnnouncementRecord> _emptyHistory = Array.Empty<AnnouncementRecord>();
+    public static IReadOnlyList<AnnouncementRecord> History => (IReadOnlyList<AnnouncementRecord>)Instance?._history ?? _emptyHistory;
+
+    /// <summary>Discard all history records. Call at round or game boundaries to prevent unbounded growth.</summary>
+    public static void ClearHistory() => Instance?._history.Clear();
 
     // -----------------------------------------------------------------------
     // Private state
@@ -160,6 +164,7 @@ public class AnnouncementOverlay : MonoBehaviour
 
     private readonly List<AnnouncementRecord> _history = new();
     private Coroutine _active;
+    private Vector2   _labelRestPosition;
 
     // -----------------------------------------------------------------------
     // Unity lifecycle
@@ -174,8 +179,13 @@ public class AnnouncementOverlay : MonoBehaviour
         }
         Instance = this;
 
+        if (_label != null)
+            _labelRestPosition = _label.rectTransform.anchoredPosition;
+
         if (_canvasGroup != null)
             _canvasGroup.alpha = 0f;
+
+        ValidateConfigs();
     }
 
     private void OnDestroy()
@@ -207,7 +217,8 @@ public class AnnouncementOverlay : MonoBehaviour
     {
         var cfg    = GetConfig(type);
         var labelRt = _label.rectTransform;
-        var basePos = labelRt.anchoredPosition;
+        labelRt.anchoredPosition = _labelRestPosition;
+        var basePos = _labelRestPosition;
 
         _label.text     = message;
         _label.color    = cfg.color;
@@ -251,6 +262,16 @@ public class AnnouncementOverlay : MonoBehaviour
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
+
+    private void ValidateConfigs()
+    {
+        if (_typeConfigs == null) return;
+        foreach (var cfg in _typeConfigs)
+        {
+            if (cfg.shakeDuration > cfg.displayDuration)
+                Debug.LogWarning($"[AnnouncementOverlay] {cfg.type}: shakeDuration ({cfg.shakeDuration}) exceeds displayDuration ({cfg.displayDuration}).");
+        }
+    }
 
     private TypeConfig GetConfig(AnnouncementType type)
     {
