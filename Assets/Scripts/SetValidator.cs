@@ -126,6 +126,7 @@ public static class SetValidator
     /// Returns true when <paramref name="challenger"/> beats <paramref name="tableSet"/>.
     /// Handles bomb-vs-non-bomb promotion and the full bomb hierarchy.
     /// Mismatched non-bomb types always return false.
+    /// Null or invalid arguments return false rather than throwing.
     /// </summary>
     public static bool Beats(
         ValidationResult challenger,
