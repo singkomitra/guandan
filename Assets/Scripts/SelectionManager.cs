@@ -25,14 +25,14 @@ public class SelectionManager
     /// <summary>Fired on every toggle. Carries the current staged list — no validity info.</summary>
     public event Action<IReadOnlyList<Card.CardId>> SelectionChanged;
 
-    /// <summary>Fired after a valid commit. Carries the cards that were played.</summary>
-    public event Action<IReadOnlyList<Card.CardId>> SelectionCommitted;
+    /// <summary>Fired after a valid commit. Carries the cards played and the validated result.</summary>
+    public event Action<IReadOnlyList<Card.CardId>, SetValidator.ValidationResult> SelectionCommitted;
 
     /// <summary>Fired when selection is explicitly cleared (Clear or Pass).</summary>
     public event Action SelectionCleared;
 
     /// <summary>Fired when Commit is attempted but SetValidator rejects the set.</summary>
-    public event Action<SetValidator.ValidationResult> SelectionFailed;
+    public event Action<SetValidator.ValidationResult> CommitFailed;
 
     // --- Mutation ---
 
@@ -61,7 +61,7 @@ public class SelectionManager
     /// <summary>
     /// Attempt to play the staged set. Runs SetValidator — the only place validation occurs.
     /// On success: fires SelectionCommitted then resets state.
-    /// On failure: fires SelectionFailed, staged list unchanged.
+    /// On failure: fires CommitFailed, staged list unchanged.
     /// Returns true if the staged set passed validation and was committed.
     /// </summary>
     public bool Commit()
@@ -69,7 +69,7 @@ public class SelectionManager
         if (!IsPlayerTurn)
         {
             if (_staged.Count > 0)
-                SelectionFailed?.Invoke(new SetValidator.ValidationResult { IsValid = false, Code = SetValidator.FailCode.NotYourTurn, FailReason = "Not your turn" });
+                CommitFailed?.Invoke(new SetValidator.ValidationResult { IsValid = false, Code = SetValidator.FailCode.NotYourTurn, FailReason = "Not your turn" });
             return false;
         }
         if (_staged.Count == 0) return false;
@@ -79,13 +79,13 @@ public class SelectionManager
         {
             var committed = new List<Card.CardId>(_staged);
             _staged.Clear();
-            SelectionCommitted?.Invoke(committed);
+            SelectionCommitted?.Invoke(committed, result);
             SelectionChanged?.Invoke(_staged);
             return true;
         }
         else
         {
-            SelectionFailed?.Invoke(result);
+            CommitFailed?.Invoke(result);
             return false;
         }
     }

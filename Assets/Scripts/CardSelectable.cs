@@ -47,13 +47,13 @@ public class CardSelectable : MonoBehaviour, IPointerClickHandler
     private void OnEnable()
     {
         SelectionManager.Instance.SelectionChanged += OnSelectionChanged;
-        SelectionManager.Instance.SelectionFailed  += OnSelectionFailed;
+        SelectionManager.Instance.CommitFailed  += OnCommitFailed;
     }
 
     private void OnDisable()
     {
         SelectionManager.Instance.SelectionChanged -= OnSelectionChanged;
-        SelectionManager.Instance.SelectionFailed  -= OnSelectionFailed;
+        SelectionManager.Instance.CommitFailed  -= OnCommitFailed;
         StopFlash();
         // Ensure visual state is cleared if component is disabled mid-selection.
         _hover?.SetSelected(false);
@@ -73,7 +73,7 @@ public class CardSelectable : MonoBehaviour, IPointerClickHandler
         if (_ring != null) _ring.enabled = isSelected;
     }
 
-    private void OnSelectionFailed(SetValidator.ValidationResult _)
+    private void OnCommitFailed(SetValidator.ValidationResult _)
     {
         if (!SelectionManager.Instance.Staged.Contains(_card.Id)) return;
         StopFlash();

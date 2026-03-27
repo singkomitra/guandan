@@ -90,6 +90,7 @@ public class HandManager : MonoBehaviour
         if (_handDropZone != null) _handDropZone.CardReturned += OnCardReturnedToHand;
         SelectionManager.Instance.SelectionChanged   += OnSelectionChanged;
         SelectionManager.Instance.SelectionCommitted += OnSelectionCommitted;
+        SelectionManager.Instance.CommitFailed    += OnCommitFailed;
         CardDrag.AnyDragBegin     += OnAnyDragBegin;
         CardDrag.AnyDragEnd       += OnAnyDragEnd;
         CardDrag.AnyDragMoved     += OnAnyDragMoved;
@@ -103,6 +104,7 @@ public class HandManager : MonoBehaviour
         if (_handDropZone != null) _handDropZone.CardReturned -= OnCardReturnedToHand;
         SelectionManager.Instance.SelectionChanged   -= OnSelectionChanged;
         SelectionManager.Instance.SelectionCommitted -= OnSelectionCommitted;
+        SelectionManager.Instance.CommitFailed    -= OnCommitFailed;
         CardDrag.AnyDragBegin     -= OnAnyDragBegin;
         CardDrag.AnyDragEnd       -= OnAnyDragEnd;
         CardDrag.AnyDragMoved     -= OnAnyDragMoved;
@@ -314,7 +316,7 @@ public class HandManager : MonoBehaviour
 
     // ── Commit ───────────────────────────────────────────────────────────────
 
-    private void OnSelectionCommitted(IReadOnlyList<Card.CardId> committed)
+    private void OnSelectionCommitted(IReadOnlyList<Card.CardId> committed, SetValidator.ValidationResult _)
     {
         foreach (var id in committed)
         {
@@ -329,6 +331,17 @@ public class HandManager : MonoBehaviour
         }
         _insertionHint = -1;
         RefreshLayout(_layoutSpeed);
+    }
+
+    private void OnCommitFailed(SetValidator.ValidationResult result)
+    {
+        var (type, message) = result.Code switch
+        {
+            SetValidator.FailCode.NotYourTurn  => (AnnouncementType.Error,   "Not Your Turn"),
+            SetValidator.FailCode.WrongSetType => (AnnouncementType.Warning, result.FailReason),
+            _                                  => (AnnouncementType.Error,   "Not Valid"),
+        };
+        AnnouncementOverlay.Show(type, message);
     }
 
     private void PlayCardVisual(RectTransform rt)
