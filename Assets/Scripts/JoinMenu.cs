@@ -22,10 +22,11 @@ public class JoinMenu : MonoBehaviour
             string address = ipInputField.text;
             if (!string.IsNullOrEmpty(address))
             {
-                if (portInputField != null && ushort.TryParse(portInputField.text, out ushort port))
+                if (portInputField != null &&
+                    ushort.TryParse(portInputField.text, out ushort port) &&
+                    Transport.active is KcpTransport kcp)
                 {
-                    if (Transport.active is KcpTransport kcp)
-                        kcp.port = port;
+                    kcp.port = port;
                 }
 
                 networkManager.onlineScene = "LobbyScene";
