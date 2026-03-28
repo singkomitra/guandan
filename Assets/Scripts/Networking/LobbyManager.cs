@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using Mirror;
+using System.Linq;
 
 public class LobbyManager : NetworkBehaviour
 {
@@ -71,8 +72,6 @@ public class LobbyManager : NetworkBehaviour
         #else
             if (players.Count < 1) return false;
         #endif
-        foreach (var p in players)
-            if (!p.isReady) return false;
-        return true;
+        return players.All(p => p.isReady);
     }
 }

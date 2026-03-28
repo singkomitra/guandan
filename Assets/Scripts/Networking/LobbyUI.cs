@@ -5,6 +5,7 @@ using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using TMPro;
 using Mirror;
+using System.Linq;
 
 public class LobbyUI : MonoBehaviour
 {
@@ -76,9 +77,7 @@ public class LobbyUI : MonoBehaviour
 #else
             bool validCount = count >= 1;
 #endif
-            bool allReady = validCount;
-            foreach (var p in players)
-                if (!p.isReady) { allReady = false; break; }
+            bool allReady = validCount && players.All(p => p.isReady);
             startButton.interactable = allReady;
         }
 
