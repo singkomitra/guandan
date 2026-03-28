@@ -10,7 +10,7 @@ public class Player : NetworkBehaviour
     public override void OnStartServer()
     {
         isHost = connectionToClient.connectionId == 0;
-        playerName = $"Player {connectionToClient.connectionId + 1}";
+        playerName = $"Player {NetworkServer.connections.Count}";
     }
 
     public override void OnStartClient()

@@ -66,7 +66,11 @@ public class LobbyManager : NetworkBehaviour
     bool CanStartGame()
     {
         var players = GetAllPlayers();
-        if (players.Count != 4 && players.Count != 6) return false;
+        #if !DEV_BUILD
+            if (players.Count != 4 && players.Count != 6) return false;
+        #else
+            if (players.Count < 1) return false;
+        #endif
         foreach (var p in players)
             if (!p.isReady) return false;
         return true;

@@ -1,6 +1,5 @@
 using UnityEngine;
 using UnityEngine.SceneManagement;
-using Mirror;
 
 public class MainMenu : MonoBehaviour
 {

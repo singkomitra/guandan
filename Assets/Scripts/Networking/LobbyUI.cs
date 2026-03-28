@@ -1,8 +1,8 @@
+using System.Collections;
 using System.Collections.Generic;
-using System.Net;
-using System.Net.Sockets;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.EventSystems;
 using TMPro;
 using Mirror;
 
@@ -22,14 +22,14 @@ public class LobbyUI : MonoBehaviour
 
     void Start()
     {
-        sessionCodeText.text = $"Session: {GetLocalIP()}";
-
         bool isHost = NetworkServer.active;
         startButton.gameObject.SetActive(isHost);
 
         readyButton.onClick.AddListener(OnReadyClicked);
         startButton.onClick.AddListener(OnStartClicked);
         leaveButton.onClick.AddListener(OnLeaveClicked);
+
+        sessionCodeText.text = string.Empty;
 
         if (LobbyManager.Instance != null)
             LobbyManager.Instance.RefreshPlayerSlots();
@@ -40,6 +40,7 @@ public class LobbyUI : MonoBehaviour
         var localPlayer = NetworkClient.localPlayer?.GetComponent<Player>();
         if (localPlayer == null) return;
         localPlayer.CmdSetReady(!localPlayer.isReady);
+        EventSystem.current.SetSelectedGameObject(null);
     }
 
     void OnStartClicked()
@@ -70,7 +71,11 @@ public class LobbyUI : MonoBehaviour
         if (startButton.gameObject.activeSelf)
         {
             int count = players.Count;
+#if !DEV_BUILD
             bool validCount = count == 4 || count == 6;
+#else
+            bool validCount = count >= 1;
+#endif
             bool allReady = validCount;
             foreach (var p in players)
                 if (!p.isReady) { allReady = false; break; }
@@ -82,11 +87,4 @@ public class LobbyUI : MonoBehaviour
             readyButton.GetComponentInChildren<TMP_Text>().text = local.isReady ? "Unready" : "Ready";
     }
 
-    static string GetLocalIP()
-    {
-        foreach (var addr in Dns.GetHostEntry(Dns.GetHostName()).AddressList)
-            if (addr.AddressFamily == AddressFamily.InterNetwork)
-                return addr.ToString();
-        return "localhost";
-    }
 }
