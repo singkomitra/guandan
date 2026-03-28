@@ -1,6 +1,5 @@
 using UnityEngine;
 using UnityEngine.SceneManagement;
-using Mirror;
 
 public class MainMenu : MonoBehaviour
 {
@@ -20,7 +19,7 @@ public class MainMenu : MonoBehaviour
     {
         if (networkManager != null)
         {
-            networkManager.onlineScene = "GameScene";
+            networkManager.onlineScene = "LobbyScene";
             networkManager.StartHost();
         }
     }

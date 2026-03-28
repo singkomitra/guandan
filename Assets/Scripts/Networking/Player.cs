@@ -3,15 +3,42 @@ using Mirror;
 
 public class Player : NetworkBehaviour
 {
-    public override void OnStartLocalPlayer()
+    [SyncVar] public string playerName;
+    [SyncVar(hook = nameof(OnReadyChanged))] public bool isReady;
+    [SyncVar] public bool isHost;
+
+    public override void OnStartServer()
     {
-        // Called when this player object is spawned on the client that owns it
-        Debug.Log("Player started: " + netId);
+        isHost = connectionToClient.connectionId == 0;
+        playerName = $"Player {NetworkServer.connections.Count}";
+    }
+
+    public override void OnStartClient()
+    {
+        LobbyManager.Instance?.RefreshPlayerSlots();
     }
 
     public override void OnStopClient()
     {
-        // Called when the client disconnects
-        Debug.Log("Player stopped: " + netId);
+        LobbyManager.Instance?.RefreshPlayerSlots();
     }
+
+    public override void OnStartLocalPlayer()
+    {
+        Debug.Log($"[Client] Local player started: netId={netId}");
+    }
+
+    [Command]
+    public void CmdSetReady(bool ready) => isReady = ready;
+
+    [Command]
+    public void CmdLeave()
+    {
+        Debug.Log($"[Server] Player {playerName} (connId={connectionToClient.connectionId}) is leaving.");
+        if (LobbyManager.Instance != null)
+            LobbyManager.Instance.RefreshPlayerSlots();
+    }
+
+    void OnReadyChanged(bool _, bool __)
+        => LobbyManager.Instance?.RefreshPlayerSlots();
 }
