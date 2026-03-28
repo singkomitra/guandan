@@ -39,6 +39,7 @@ jobs:
             > pr.diff
 
       - name: Review with Claude
+        if: steps.auth_check.outputs.allowed == 'true'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           PR_TITLE: ${{ github.event.pull_request.title }}
@@ -94,6 +95,7 @@ jobs:
           jq -r '.content[0].text' response_body.json > claude_response.json
 
       - name: Post review
+        if: steps.auth_check.outputs.allowed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
