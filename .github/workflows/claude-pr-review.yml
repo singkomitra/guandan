@@ -16,24 +16,15 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Get PR diff
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh pr diff ${{ github.event.pull_request.number }} --patch > pr.diff.raw
-          # Strip context lines and filter out generated/binary Unity files
-          filterdiff --strip-match=1 \
-            --exclude='*.meta' \
-            --exclude='*.asset' \
-            --exclude='ProjectSettings/*' \
-            --unified=0 \
-            pr.diff.raw > pr.diff || {
-            # filterdiff not available — fall back to unified=0 with path filtering
-            gh pr diff ${{ github.event.pull_request.number }} --unified=0 | \
-              grep -v '^diff --git.*/ProjectSettings/' | \
-              grep -Pv '^diff --git.*\.(meta|asset)' > pr.diff || true
-          }
+          git fetch origin ${{ github.base_ref }}
+          git diff --unified=0 origin/${{ github.base_ref }}...HEAD \
+            -- ':(exclude)*.meta' ':(exclude)*.asset' ':(exclude)ProjectSettings/*' \
+            > pr.diff
 
       - name: Review with Claude
         env:
