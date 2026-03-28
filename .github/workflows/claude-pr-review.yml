@@ -19,7 +19,19 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check author is in CODEOWNERS
+        id: auth_check
+        run: |
+          AUTHOR="${{ github.event.pull_request.user.login }}"
+          if grep -oP '(?<=@)\w+' .github/CODEOWNERS | grep -qx "$AUTHOR"; then
+            echo "allowed=true" >> $GITHUB_OUTPUT
+          else
+            echo "allowed=false" >> $GITHUB_OUTPUT
+            echo "PR author '$AUTHOR' is not in CODEOWNERS — skipping Claude review."
+          fi
+
       - name: Get PR diff
+        if: steps.auth_check.outputs.allowed == 'true'
         run: |
           git fetch origin ${{ github.base_ref }}
           git diff --unified=0 origin/${{ github.base_ref }}...HEAD \

@@ -1,0 +1,3 @@
+# Auto-assigns reviewers on every PR.
+# Also used by the Claude review workflow to determine eligible authors.
+* @paologum @asivath
