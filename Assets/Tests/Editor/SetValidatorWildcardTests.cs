@@ -502,6 +502,17 @@ public class SetValidatorWildcardTests
         AssertInvalid(r);
     }
 
+    [Test]
+    public void ConsecutiveTriples_SevenCardsWithWildcard_WrongTotalForTwoTriples_Invalid()
+    {
+        Debug.Log("5 5 5 + 6 6 6 + wildcard = 7 cards — two triples require exactly 6 cards");
+        var r = VT(Card.Rank.Two,
+            C(Card.Rank.Five), C(Card.Rank.Five, Card.Suit.Hearts), C(Card.Rank.Five, Card.Suit.Diamonds),
+            C(Card.Rank.Six),  C(Card.Rank.Six,  Card.Suit.Hearts), C(Card.Rank.Six,  Card.Suit.Diamonds),
+            W(Card.Rank.Two));
+        AssertInvalid(r);
+    }
+
     // =========================================================================
     // Wildcard Triple Consecutive Pairs
     // =========================================================================
@@ -565,6 +576,18 @@ public class SetValidatorWildcardTests
             C(Card.Rank.Six),  C(Card.Rank.Six,  Card.Suit.Hearts),
             C(Card.Rank.Seven), C(Card.Rank.Seven, Card.Suit.Hearts), C(Card.Rank.Seven, Card.Suit.Diamonds)
         }, null);
+        AssertInvalid(r);
+    }
+
+    [Test]
+    public void TripleConsecPairs_SevenCardsWithWildcards_NotDivisibleByThreeGroups_Invalid()
+    {
+        Debug.Log("5 5 + 6 6 + 7 + two wildcards = 7 cards — cannot split into 3 equal groups");
+        var r = VT(Card.Rank.Two,
+            C(Card.Rank.Five), C(Card.Rank.Five, Card.Suit.Hearts),
+            C(Card.Rank.Six),  C(Card.Rank.Six,  Card.Suit.Hearts),
+            C(Card.Rank.Seven),
+            W(Card.Rank.Two), W(Card.Rank.Two));
         AssertInvalid(r);
     }
 
