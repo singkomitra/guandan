@@ -57,19 +57,18 @@ public class SetValidatorWildcardTests
     }
 
     [Test]
-    public void Identity_WildcardInNaturalStraight_NoSubstitution()
+    public void Identity_WildcardExtractsAndExtendsAbove()
     {
-        Debug.Log("Wildcard participates naturally in a straight when its rank fits");
-        // trump=Two: 2♥ is wildcard, but 2,3,4,5,6 is a valid natural straight
-        // 2♥ has rank Two which IS consecutive — detected in pass 1 (no substitution)
+        Debug.Log("trump=Two: 2♥ is always extracted as wildcard; 3 4 5 6 + wildcard = Straight 3–7");
+        // Wildcards are always extracted first — there is no natural-rank pass.
         var r = VT(Card.Rank.Two,
             W(Card.Rank.Two),
             C(Card.Rank.Three, Card.Suit.Hearts),
-            C(Card.Rank.Four),
+            C(Card.Rank.Four,  Card.Suit.Diamonds),
             C(Card.Rank.Five),
             C(Card.Rank.Six));
         AssertValid(r, SetValidator.SetType.Straight);
-        Assert.AreEqual(Card.Rank.Two, r.KeyRank);
+        Assert.AreEqual(Card.Rank.Three, r.KeyRank);
     }
 
     // =========================================================================
@@ -226,10 +225,10 @@ public class SetValidatorWildcardTests
     {
         Debug.Log("3 4 5 6 + wildcard = Straight 3–7 (wildcard extends above)");
         var r = VT(Card.Rank.Two,
-            C(Card.Rank.Three), C(Card.Rank.Four), C(Card.Rank.Five), C(Card.Rank.Six),
+            C(Card.Rank.Three), C(Card.Rank.Four, Card.Suit.Hearts),
+            C(Card.Rank.Five,   Card.Suit.Diamonds), C(Card.Rank.Six),
             W(Card.Rank.Two));
         AssertValid(r, SetValidator.SetType.Straight);
-        // Prefers extending above: keyRank stays at 3, high goes to 7
         Assert.AreEqual(Card.Rank.Three, r.KeyRank);
     }
 
@@ -238,7 +237,8 @@ public class SetValidatorWildcardTests
     {
         Debug.Log("J Q K A + wildcard = Straight 10–A (forced to extend below)");
         var r = VT(Card.Rank.Two,
-            C(Card.Rank.Jack), C(Card.Rank.Queen), C(Card.Rank.King), C(Card.Rank.Ace),
+            C(Card.Rank.Jack), C(Card.Rank.Queen, Card.Suit.Hearts),
+            C(Card.Rank.King,  Card.Suit.Diamonds), C(Card.Rank.Ace),
             W(Card.Rank.Two));
         AssertValid(r, SetValidator.SetType.Straight);
         Assert.AreEqual(Card.Rank.Ten, r.KeyRank);
@@ -271,9 +271,9 @@ public class SetValidatorWildcardTests
     {
         Debug.Log("3 4 wildcard 6 7 8 = 6-card Straight 3–8 (wildcard fills 5)");
         var r = VT(Card.Rank.Two,
-            C(Card.Rank.Three), C(Card.Rank.Four),
+            C(Card.Rank.Three), C(Card.Rank.Four, Card.Suit.Hearts),
             W(Card.Rank.Two),
-            C(Card.Rank.Six), C(Card.Rank.Seven), C(Card.Rank.Eight));
+            C(Card.Rank.Six), C(Card.Rank.Seven, Card.Suit.Diamonds), C(Card.Rank.Eight));
         AssertValid(r, SetValidator.SetType.Straight);
         Assert.AreEqual(Card.Rank.Three, r.KeyRank);
     }
@@ -284,7 +284,7 @@ public class SetValidatorWildcardTests
         Debug.Log("3 5 7 + two wildcards = Straight 3–7 (wildcards fill 4 and 6)");
         var r = VT(Card.Rank.Two,
             C(Card.Rank.Three), W(Card.Rank.Two),
-            C(Card.Rank.Five),  W(Card.Rank.Two),
+            C(Card.Rank.Five,   Card.Suit.Hearts), W(Card.Rank.Two),
             C(Card.Rank.Seven));
         AssertValid(r, SetValidator.SetType.Straight);
         Assert.AreEqual(Card.Rank.Three, r.KeyRank);
@@ -620,9 +620,9 @@ public class SetValidatorWildcardTests
     {
         Debug.Log("Wildcard Straight 3–7 (gap filled) should beat natural Straight 2–6");
         var wildStraight = VT(Card.Rank.Two,
-            C(Card.Rank.Three), C(Card.Rank.Four),
+            C(Card.Rank.Three), C(Card.Rank.Four, Card.Suit.Hearts),
             W(Card.Rank.Two),
-            C(Card.Rank.Six), C(Card.Rank.Seven));
+            C(Card.Rank.Six, Card.Suit.Diamonds), C(Card.Rank.Seven));
         var natStraight = SetValidator.Validate(new[] {
             C(Card.Rank.Two,   Card.Suit.Spades),
             C(Card.Rank.Three, Card.Suit.Hearts),
@@ -642,7 +642,8 @@ public class SetValidatorWildcardTests
             C(Card.Rank.Three, Card.Suit.Diamonds),
             W(Card.Rank.Two));
         var straight = SetValidator.Validate(new[] {
-            C(Card.Rank.Nine), C(Card.Rank.Ten), C(Card.Rank.Jack),
+            C(Card.Rank.Nine),  C(Card.Rank.Ten,   Card.Suit.Hearts),
+            C(Card.Rank.Jack,   Card.Suit.Diamonds),
             C(Card.Rank.Queen), C(Card.Rank.King)
         }, null);
         Assert.IsTrue(SetValidator.Beats(bomb, straight, Card.Rank.Two));
