@@ -476,7 +476,6 @@ public static partial class SetValidator
         out Card.Rank keyRank, out Card.Rank highRank)
     {
         keyRank = default; highRank = default;
-        int n = sorted.Count + wildcardSlots;
 
         // No duplicate ranks.
         for (int i = 1; i < sorted.Count; i++)
