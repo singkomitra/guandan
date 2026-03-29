@@ -282,7 +282,7 @@ public static partial class SetValidator
     }
 
     /// <summary>
-    /// Straight Flush: 5+ consecutive cards all of the same suit.
+    /// Straight Flush: exactly 5 consecutive cards all of the same suit.
     /// Wildcards fill missing ranks; the wildcard physically adopts the flush suit.
     /// </summary>
     private static bool TryStraightFlush(
@@ -291,7 +291,7 @@ public static partial class SetValidator
     {
         desc = null; keyRank = default;
         int n = naturalCards.Count + wildcardSlots;
-        if (n < 5) return false;
+        if (n != 5) return false;
         if (naturalCards.Any(IsJoker)) return false;
 
         var suit = naturalCards[0].suit;
@@ -415,7 +415,7 @@ public static partial class SetValidator
     }
 
     /// <summary>
-    /// Straight: 5+ cards with strictly consecutive, distinct ranks — no jokers, no duplicates.
+    /// Straight: exactly 5 consecutive, distinct ranks — no jokers, no duplicates.
     /// Does not wrap (A–2 is invalid). Wildcards fill gaps or extend at ends.
     /// </summary>
     private static bool TryStraight(
@@ -424,7 +424,7 @@ public static partial class SetValidator
     {
         desc = null; keyRank = default;
         int n = naturalCards.Count + wildcardSlots;
-        if (n < 5) return false;
+        if (n != 5) return false;
         if (naturalCards.Any(IsJoker)) return false;
 
         var sorted = SortedByRank(naturalCards);
@@ -512,7 +512,6 @@ public static partial class SetValidator
     {
         ranks = null;
         if (naturalCards.Count + wildcardSlots != groupCount * groupSize) return false;
-        int target = groupSize;
         if (naturalCards.Any(IsJoker)) return false;
         var groups = GroupByRank(naturalCards);
         if (groups.Count != groupCount) return false;
@@ -522,8 +521,8 @@ public static partial class SetValidator
         int shortfall = 0;
         foreach (var rank in r)
         {
-            if (groups[rank] > target) return false;
-            shortfall += target - groups[rank];
+            if (groups[rank] > groupSize) return false;
+            shortfall += groupSize - groups[rank];
         }
         if (shortfall > wildcardSlots) return false;
         ranks = r;
