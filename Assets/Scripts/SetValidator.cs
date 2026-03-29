@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 /// <summary>
@@ -152,9 +153,6 @@ public static class SetValidator
         }
 
         // Both non-bombs: must match type.
-        // When called from Validate(), type-mismatch is already caught by the WrongSetType
-        // check above, so this branch is dead in the normal flow. It is kept here so that
-        // direct callers of the standalone Beats() API are handled correctly.
         if (challenger.Type != tableSet.Type) return false;
 
         return KeyRankValue(challenger.Type, challenger.KeyRank, trumpRank)
@@ -168,74 +166,120 @@ public static class SetValidator
     private static ValidationResult TryIdentify(IReadOnlyList<Card.CardId> cards, Card.Rank trumpRank)
     {
         int n = cards.Count;
+        int wildcardSlots = ExtractWildcards(cards, trumpRank, out var naturalCards);
+        if (wildcardSlots > 2) return null;
 
-        // --- Bombs (can always be played) ---
-        if (TryJokerBomb(cards, out string desc))                        return Identified(SetType.JokerBomb, desc, cards);
-        if (n >= 5 && TryStraightFlush(cards, trumpRank, out desc))      return Identified(SetType.StraightFlush, desc, cards);
-        if (n >= 4 && n <= 8 && TryNBomb(cards, n, out desc))            return Identified(NBombType(n), desc, cards);
+        string desc;
+        Card.Rank keyRank;
+
+        // Single: always valid; lone wildcard plays as its natural trump-rank card.
+        if (n == 1)
+            return Identified(SetType.Single, SingleDesc(cards[0]), cards[0].rank);
+
+        // --- Bombs ---
+        if (TryJokerBomb(naturalCards, wildcardSlots, out desc))
+            return Identified(SetType.JokerBomb, desc, Card.Rank.RedJoker);
+
+        if (TryStraightFlush(naturalCards, n, wildcardSlots, out desc, out keyRank))
+            return Identified(SetType.StraightFlush, desc, keyRank);
+
+        if (TryNBomb(naturalCards, n, wildcardSlots, out desc))
+            return Identified(NBombType(n), desc, naturalCards[0].rank);
 
         // --- Regular sets ---
-        if (n == 1) return Identified(SetType.Single, SingleDesc(cards[0]), cards);
-        if (n == 2 && TryPair(cards, out desc))                          return Identified(SetType.Pair, desc, cards);
-        if (n == 3 && TryTriple(cards, out desc))                        return Identified(SetType.Triple, desc, cards);
-        if (n == 5 && TryFullHouse(cards, out desc))                     return Identified(SetType.FullHouse, desc, cards);
-        if (n >= 5 && TryStraight(cards, out desc))                      return Identified(SetType.Straight, desc, cards);
-        if (n == 6 && TryConsecutiveTriplePairs(cards, out desc))        return Identified(SetType.ConsecutiveTriplePairs, desc, cards);
-        if (n == 6 && TryTripleConsecutivePairs(cards, out desc))        return Identified(SetType.TripleConsecutivePairs, desc, cards);
+        if (TryPair(naturalCards, n, wildcardSlots, trumpRank, out desc, out keyRank))
+            return Identified(SetType.Pair, desc, keyRank);
+
+        if (TryTriple(naturalCards, n, wildcardSlots, out desc, out keyRank))
+            return Identified(SetType.Triple, desc, keyRank);
+
+        if (TryFullHouse(naturalCards, n, wildcardSlots, out desc, out keyRank))
+            return Identified(SetType.FullHouse, desc, keyRank);
+
+        if (TryStraight(naturalCards, n, wildcardSlots, out desc, out keyRank))
+            return Identified(SetType.Straight, desc, keyRank);
+
+        if (TryConsecutiveTriplePairs(naturalCards, n, wildcardSlots, out desc, out keyRank))
+            return Identified(SetType.ConsecutiveTriplePairs, desc, keyRank);
+
+        if (TryTripleConsecutivePairs(naturalCards, n, wildcardSlots, out desc, out keyRank))
+            return Identified(SetType.TripleConsecutivePairs, desc, keyRank);
 
         return null;
+    }
+
+    // -------------------------------------------------------------------------
+    // Wildcard extraction
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Separates trump-of-hearts wildcards from the rest.
+    /// Returns the wildcard count; naturalCards receives all non-wildcard cards.
+    /// </summary>
+    private static int ExtractWildcards(
+        IReadOnlyList<Card.CardId> cards,
+        Card.Rank trumpRank,
+        out List<Card.CardId> naturalCards)
+    {
+        naturalCards = new List<Card.CardId>(cards.Count);
+        int wildcardSlots = 0;
+        foreach (var c in cards)
+        {
+            if (c.rank == trumpRank && c.suit == Card.Suit.Hearts)
+                wildcardSlots++;
+            else
+                naturalCards.Add(c);
+        }
+        return wildcardSlots;
     }
 
     // -------------------------------------------------------------------------
     // Bomb detectors
     // -------------------------------------------------------------------------
 
-    /// <summary>Joker Bomb: exactly 2 Black Jokers + 2 Red Jokers.</summary>
-    private static bool TryJokerBomb(IReadOnlyList<Card.CardId> cards, out string desc)
+    /// <summary>Joker Bomb: exactly 2 Black Jokers + 2 Red Jokers. No wildcards allowed.</summary>
+    private static bool TryJokerBomb(IReadOnlyList<Card.CardId> naturalCards, int wildcardSlots, out string desc)
     {
         desc = null;
-        if (cards.Count != 4) return false;
-        int black = 0, red = 0;
-        foreach (var c in cards)
-        {
-            if      (c.rank == Card.Rank.BlackJoker) black++;
-            else if (c.rank == Card.Rank.RedJoker)   red++;
-            else return false;
-        }
+        if (wildcardSlots > 0) return false;
+        if (naturalCards.Count != 4) return false;
+        if (naturalCards.Any(c => c.rank != Card.Rank.BlackJoker && c.rank != Card.Rank.RedJoker)) return false;
+        int black = naturalCards.Count(c => c.rank == Card.Rank.BlackJoker);
+        int red   = naturalCards.Count(c => c.rank == Card.Rank.RedJoker);
         if (black != 2 || red != 2) return false;
         desc = "Joker Bomb";
         return true;
     }
 
-    /// <summary>N-Bomb: N cards of the same rank (no jokers). N in [4, 8].</summary>
-    private static bool TryNBomb(IReadOnlyList<Card.CardId> cards, int n, out string desc)
+    /// <summary>N-Bomb: N cards of the same non-joker rank. Wildcards fill missing slots.</summary>
+    private static bool TryNBomb(IReadOnlyList<Card.CardId> naturalCards, int n, int wildcardSlots, out string desc)
     {
         desc = null;
-        var first = cards[0];
-        if (IsJoker(first)) return false;
-        foreach (var c in cards)
-            if (c.rank != first.rank || IsJoker(c)) return false;
-        desc = $"{n}-Bomb of {RankName(first.rank, plural: true)}";
+        if (n < 4 || n > 8) return false;
+        if (!AllSameNonJokerRank(naturalCards, out var rank)) return false;
+        desc = $"{n}-Bomb of {RankName(rank, plural: true)}{WildcardSuffix(wildcardSlots)}";
         return true;
     }
 
     /// <summary>
     /// Straight Flush: 5+ consecutive cards all of the same suit.
-    /// Trump-of-Hearts wildcard is not yet implemented (TODO).
+    /// Wildcards fill missing ranks; the wildcard physically adopts the flush suit.
     /// </summary>
     private static bool TryStraightFlush(
-        IReadOnlyList<Card.CardId> cards, Card.Rank trumpRank, out string desc)
+        IReadOnlyList<Card.CardId> naturalCards, int n, int wildcardSlots,
+        out string desc, out Card.Rank keyRank)
     {
-        desc = null;
-        foreach (var c in cards) if (IsJoker(c)) return false;
+        desc = null; keyRank = default;
+        if (n < 5) return false;
+        if (naturalCards.Any(IsJoker)) return false;
 
-        var suit = cards[0].suit;
-        foreach (var c in cards) if (c.suit != suit) return false;
+        var suit = naturalCards[0].suit;
+        if (naturalCards.Any(c => c.suit != suit)) return false;
 
-        var sorted = SortedByRank(cards);
-        if (!AreStrictlyConsecutive(sorted)) return false;
+        var sorted = SortedByRank(naturalCards);
+        if (!TryConsecutiveSequence(sorted, n, wildcardSlots, out keyRank, out var highRank)) return false;
 
-        desc = $"Straight Flush {RankName(sorted[0].rank, false)}–{RankName(sorted[sorted.Count - 1].rank, false)} ({suit})";
+        desc = $"Straight Flush {RankName(keyRank, false)}–{RankName(highRank, false)} ({suit}){WildcardSuffix(wildcardSlots)}";
         return true;
     }
 
@@ -250,108 +294,204 @@ public static class SetValidator
         return $"{RankName(c.rank, false)} of {c.suit}";
     }
 
-    /// <summary>Pair: two cards of the same rank. Joker pairs must be same color.</summary>
-    private static bool TryPair(IReadOnlyList<Card.CardId> cards, out string desc)
+    /// <summary>
+    /// Pair: two cards of the same rank.
+    /// Joker pairs must be same color and cannot use wildcards.
+    /// Two wildcards form a pair of the trump rank.
+    /// </summary>
+    private static bool TryPair(
+        IReadOnlyList<Card.CardId> naturalCards, int n, int wildcardSlots, Card.Rank trumpRank,
+        out string desc, out Card.Rank keyRank)
     {
-        desc = null;
-        var a = cards[0];
-        var b = cards[1];
+        desc = null; keyRank = default;
+        if (n != 2) return false;
 
-        // Joker pair: both must be the same joker rank
-        if (IsJoker(a) || IsJoker(b))
+        // Both wildcards: pair of trump rank (both cards are physically trump-of-hearts).
+        if (naturalCards.Count == 0)
         {
-            if (a.rank != b.rank) return false;
-            desc = a.rank == Card.Rank.BlackJoker ? "Pair of Black Jokers" : "Pair of Red Jokers";
+            desc = $"Pair of {RankName(trumpRank, plural: true)}";
+            keyRank = trumpRank;
             return true;
         }
 
-        if (a.rank != b.rank) return false;
-        desc = $"Pair of {RankName(a.rank, plural: true)}";
-        return true;
-    }
+        var first = naturalCards[0];
 
-    /// <summary>Triple: three cards of the same non-joker rank.</summary>
-    private static bool TryTriple(IReadOnlyList<Card.CardId> cards, out string desc)
-    {
-        desc = null;
-        var r = cards[0].rank;
-        if (IsJokerRank(r)) return false;
-        foreach (var c in cards) if (c.rank != r) return false;
-        desc = $"Triple {RankName(r, plural: true)}";
-        return true;
-    }
-
-    /// <summary>Full House: one triple + one pair, no jokers.</summary>
-    private static bool TryFullHouse(IReadOnlyList<Card.CardId> cards, out string desc)
-    {
-        desc = null;
-        foreach (var c in cards) if (IsJoker(c)) return false;
-
-        var groups = GroupByRank(cards);
-        if (groups.Count != 2) return false;
-
-        Card.Rank tripleRank = default, pairRank = default;
-        bool foundTriple = false, foundPair = false;
-        foreach (var kv in groups)
+        // Joker pair: must be complete, no wildcard mixing.
+        if (IsJoker(first))
         {
-            if      (kv.Value == 3) { tripleRank = kv.Key; foundTriple = true; }
-            else if (kv.Value == 2) { pairRank   = kv.Key; foundPair   = true; }
-            else return false;
+            if (wildcardSlots > 0 || naturalCards.Count != 2 || naturalCards[1].rank != first.rank) return false;
+            desc = first.rank == Card.Rank.BlackJoker ? "Pair of Black Jokers" : "Pair of Red Jokers";
+            keyRank = first.rank;
+            return true;
         }
-        if (!foundTriple || !foundPair) return false;
 
-        desc = $"Full House: {RankName(tripleRank, plural: true)} over {RankName(pairRank, plural: true)}";
+        // Non-joker: all natural cards must share the same rank.
+        if (!AllSameNonJokerRank(naturalCards, out keyRank)) return false;
+        desc = $"Pair of {RankName(keyRank, plural: true)}{WildcardSuffix(wildcardSlots)}";
+        return true;
+    }
+
+    /// <summary>Triple: three cards of the same non-joker rank. Wildcards fill missing slots.</summary>
+    private static bool TryTriple(
+        IReadOnlyList<Card.CardId> naturalCards, int n, int wildcardSlots,
+        out string desc, out Card.Rank keyRank)
+    {
+        desc = null; keyRank = default;
+        if (n != 3) return false;
+        if (!AllSameNonJokerRank(naturalCards, out keyRank)) return false;
+        desc = $"Triple {RankName(keyRank, plural: true)}{WildcardSuffix(wildcardSlots)}";
+        return true;
+    }
+
+    /// <summary>
+    /// Full House: one triple + one pair.
+    /// The triple must be non-joker. The pair may be jokers if already complete.
+    /// Wildcards fill non-joker shortfall only.
+    /// </summary>
+    private static bool TryFullHouse(
+        IReadOnlyList<Card.CardId> naturalCards, int n, int wildcardSlots,
+        out string desc, out Card.Rank keyRank)
+    {
+        desc = null; keyRank = default;
+        if (n != 5) return false;
+
+        var groups = GroupByRank(naturalCards);
+        if (groups.Count == 0 || groups.Count > 2) return false;
+
+        var ranks = SortedRankKeys(groups);
+
+        if (groups.Count == 2)
+        {
+            // Both orderings tried — TryFHAssignment rejects joker triples internally.
+            Card.Rank tr, pr;
+            if (!TryFHAssignment(groups, ranks[1], ranks[0], wildcardSlots, out tr, out pr) &&
+                !TryFHAssignment(groups, ranks[0], ranks[1], wildcardSlots, out tr, out pr))
+                return false;
+            desc = $"Full House: {RankName(tr, plural: true)} over {RankName(pr, plural: true)}{WildcardSuffix(wildcardSlots)}";
+            keyRank = tr;
+            return true;
+        }
+        else // groups.Count == 1: wildcards fill the pair
+        {
+            if (wildcardSlots != 2) return false;
+            if (!TryTriple(naturalCards, 3, 0, out _, out keyRank)) return false;
+            desc = $"Full House: {RankName(keyRank, plural: true)} over wildcard pair (wildcard)";
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Attempts to assign tripleRank and pairRank roles.
+    /// Triple must be non-joker. Joker pair must already be complete.
+    /// Non-joker shortfall must not exceed wildcardSlots.
+    /// </summary>
+    private static bool TryFHAssignment(
+        Dictionary<Card.Rank, int> groups,
+        Card.Rank tripleRank, Card.Rank pairRank, int wildcardSlots,
+        out Card.Rank outTriple, out Card.Rank outPair)
+    {
+        outTriple = default; outPair = default;
+        if (IsJokerRank(tripleRank)) return false;
+
+        int tripleCount = groups.TryGetValue(tripleRank, out int tc) ? tc : 0;
+        int pairCount   = groups.TryGetValue(pairRank,   out int pc) ? pc : 0;
+
+        int tripleShortfall = Math.Max(0, 3 - tripleCount);
+        int pairShortfall   = Math.Max(0, 2 - pairCount);
+
+        if (IsJokerRank(pairRank) && pairShortfall > 0) return false;
+
+        int nonJokerShortfall = tripleShortfall + (IsJokerRank(pairRank) ? 0 : pairShortfall);
+        if (nonJokerShortfall > wildcardSlots) return false;
+
+        outTriple = tripleRank;
+        outPair   = pairRank;
         return true;
     }
 
     /// <summary>
     /// Straight: 5+ cards with strictly consecutive, distinct ranks — no jokers, no duplicates.
-    /// Does not wrap (A–2 is invalid). Trump-of-Hearts wildcard is not yet implemented (TODO).
+    /// Does not wrap (A–2 is invalid). Wildcards fill gaps or extend at ends.
     /// </summary>
-    private static bool TryStraight(IReadOnlyList<Card.CardId> cards, out string desc)
+    private static bool TryStraight(
+        IReadOnlyList<Card.CardId> naturalCards, int n, int wildcardSlots,
+        out string desc, out Card.Rank keyRank)
     {
-        desc = null;
-        foreach (var c in cards) if (IsJoker(c)) return false;
+        desc = null; keyRank = default;
+        if (n < 5) return false;
+        if (naturalCards.Any(IsJoker)) return false;
 
-        var sorted = SortedByRank(cards);
-        if (!AreStrictlyConsecutive(sorted)) return false;
+        var sorted = SortedByRank(naturalCards);
+        if (!TryConsecutiveSequence(sorted, n, wildcardSlots, out keyRank, out var highRank)) return false;
 
-        desc = $"Straight {RankName(sorted[0].rank, false)}–{RankName(sorted[sorted.Count - 1].rank, false)}";
+        desc = $"Straight {RankName(keyRank, false)}–{RankName(highRank, false)}{WildcardSuffix(wildcardSlots)}";
         return true;
     }
 
-    /// <summary>Pair of Consecutive Triples: exactly two triples of consecutive rank (e.g. 444 555).</summary>
-    private static bool TryConsecutiveTriplePairs(IReadOnlyList<Card.CardId> cards, out string desc)
+    /// <summary>
+    /// Consecutive Triple Pairs: exactly two triples of consecutive rank (e.g. 444 555).
+    /// No jokers. Trump rank is its natural value. Wildcards fill missing cards.
+    /// Requires exactly 2 distinct consecutive ranks in naturalCards.
+    /// </summary>
+    private static bool TryConsecutiveTriplePairs(
+        IReadOnlyList<Card.CardId> naturalCards, int n, int wildcardSlots,
+        out string desc, out Card.Rank keyRank)
     {
-        desc = null;
-        foreach (var c in cards) if (IsJoker(c)) return false;
-
-        var groups = GroupByRank(cards);
-        if (groups.Count != 2) return false;
-        foreach (var kv in groups) if (kv.Value != 3) return false;
-
-        var ranks = SortedRankKeys(groups);
-        if ((int)ranks[1] - (int)ranks[0] != 1) return false;
-
-        desc = $"Consecutive Triples {RankName(ranks[0], false)}–{RankName(ranks[1], false)}";
+        desc = null; keyRank = default;
+        if (!TryConsecutiveGroups(naturalCards, n, wildcardSlots, 2, out var ranks)) return false;
+        keyRank = ranks[0];
+        desc = $"Consecutive Triples {RankName(ranks[0], false)}–{RankName(ranks[1], false)}{WildcardSuffix(wildcardSlots)}";
         return true;
     }
 
-    /// <summary>Triple Consecutive Pairs: exactly three pairs of consecutive rank (e.g. 33 44 55).</summary>
-    private static bool TryTripleConsecutivePairs(IReadOnlyList<Card.CardId> cards, out string desc)
+    private static bool TryTripleConsecutivePairs(
+        IReadOnlyList<Card.CardId> naturalCards, int n, int wildcardSlots,
+        out string desc, out Card.Rank keyRank)
     {
-        desc = null;
-        foreach (var c in cards) if (IsJoker(c)) return false;
+        desc = null; keyRank = default;
+        if (!TryConsecutiveGroups(naturalCards, n, wildcardSlots, 3, out var ranks)) return false;
+        keyRank = ranks[0];
+        desc = $"Consecutive Pairs {RankName(ranks[0], false)}–{RankName(ranks[2], false)}{WildcardSuffix(wildcardSlots)}";
+        return true;
+    }
 
-        var groups = GroupByRank(cards);
-        if (groups.Count != 3) return false;
-        foreach (var kv in groups) if (kv.Value != 2) return false;
+    // -------------------------------------------------------------------------
+    // Shared sequence helper
+    // -------------------------------------------------------------------------
 
-        var ranks = SortedRankKeys(groups);
-        if ((int)ranks[1] - (int)ranks[0] != 1 ||
-            (int)ranks[2] - (int)ranks[1] != 1) return false;
+    /// <summary>
+    /// Core straight/flush validation using the gap-sum heuristic.
+    /// gaps = sum of (rank[i+1] - rank[i] - 1) across adjacent sorted natural cards.
+    /// Valid when gaps &lt;= wildcardSlots. Remaining wildcards extend at ends.
+    /// Prefers extending above (stronger straight); falls back to extending below.
+    /// </summary>
+    private static bool TryConsecutiveSequence(
+        List<Card.CardId> sorted, int n, int wildcardSlots,
+        out Card.Rank keyRank, out Card.Rank highRank)
+    {
+        keyRank = default; highRank = default;
 
-        desc = $"Consecutive Pairs {RankName(ranks[0], false)}–{RankName(ranks[2], false)}";
+        // No duplicate ranks.
+        for (int i = 1; i < sorted.Count; i++)
+            if (sorted[i].rank == sorted[i - 1].rank) return false;
+
+        // Sum interior gaps.
+        int gaps = 0;
+        for (int i = 1; i < sorted.Count; i++)
+            gaps += (int)sorted[i].rank - (int)sorted[i - 1].rank - 1;
+
+        if (gaps > wildcardSlots) return false;
+
+        // Remaining wildcards extend at ends — prefer above for a stronger straight.
+        int leftover    = wildcardSlots - gaps;
+        int canGoAbove  = (int)Card.Rank.Ace - (int)sorted[sorted.Count - 1].rank;
+        int goAbove     = Math.Min(leftover, canGoAbove);
+        int goBelow     = leftover - goAbove;
+
+        if ((int)sorted[0].rank - goBelow < (int)Card.Rank.Two) return false;
+
+        keyRank  = (Card.Rank)((int)sorted[0].rank - goBelow);
+        highRank = (Card.Rank)((int)sorted[sorted.Count - 1].rank + goAbove);
         return true;
     }
 
@@ -383,17 +523,6 @@ public static class SetValidator
         var list = new List<Card.CardId>(cards);
         list.Sort((a, b) => (int)a.rank - (int)b.rank);
         return list;
-    }
-
-    /// <summary>
-    /// True when the sorted list has no duplicate ranks and each step is exactly +1.
-    /// </summary>
-    private static bool AreStrictlyConsecutive(List<Card.CardId> sorted)
-    {
-        for (int i = 1; i < sorted.Count; i++)
-            if ((int)sorted[i].rank - (int)sorted[i - 1].rank != 1)
-                return false;
-        return true;
     }
 
     private static Dictionary<Card.Rank, int> GroupByRank(IReadOnlyList<Card.CardId> cards)
@@ -457,33 +586,8 @@ public static class SetValidator
         _                              => type.ToString()
     };
 
-    private static ValidationResult Identified(SetType type, string desc, IReadOnlyList<Card.CardId> cards) =>
-        new ValidationResult { IsValid = true, Type = type, Description = desc, KeyRank = GetKeyRank(type, cards) };
-
-    /// <summary>Returns the rank used to compare two sets of the same type.</summary>
-    private static Card.Rank GetKeyRank(SetType type, IReadOnlyList<Card.CardId> cards)
-    {
-        switch (type)
-        {
-            case SetType.FullHouse:
-                foreach (var kv in GroupByRank(cards))
-                    if (kv.Value == 3) return kv.Key;
-                return default;
-
-            case SetType.Straight:
-            case SetType.StraightFlush:
-            case SetType.ConsecutiveTriplePairs:
-            case SetType.TripleConsecutivePairs:
-                return SortedByRank(cards)[0].rank;
-
-            case SetType.JokerBomb:
-                return Card.Rank.RedJoker; // irrelevant — JokerBomb always wins
-
-            default:
-                // Single, Pair, Triple, NBombs: all cards share one rank
-                return cards[0].rank;
-        }
-    }
+    private static ValidationResult Identified(SetType type, string desc, Card.Rank keyRank) =>
+        new ValidationResult { IsValid = true, Type = type, Description = desc, KeyRank = keyRank };
 
     /// <summary>
     /// Ordering of bomb types, weakest (1) to strongest (7).
@@ -501,11 +605,6 @@ public static class SetValidator
         _                     => 0
     };
 
-    /// <summary>
-    /// Integer rank for comparison. Uses 2× scale so trump (= Ace + 1 step) fits between
-    /// Ace (28) and Black Joker (30) without floating-point.
-    /// Scale: Two=4 … Ace=28, Trump=29, BlackJoker=30, RedJoker=32.
-    /// </summary>
     /// <summary>
     /// Rank value used for set comparison. Straights and StraightFlushes compare by natural
     /// starting rank — trump has no elevating effect. All other sets use EffectiveRank.
@@ -525,4 +624,45 @@ public static class SetValidator
 
     private static ValidationResult Fail(FailCode code, string reason = null) =>
         new ValidationResult { IsValid = false, Code = code, FailReason = reason };
+
+    /// <summary>True when every card in <paramref name="naturalCards"/> shares the same non-joker rank.</summary>
+    private static bool AllSameNonJokerRank(IReadOnlyList<Card.CardId> naturalCards, out Card.Rank rank)
+    {
+        rank = default;
+        if (naturalCards.Count == 0) return false;
+        var first = naturalCards[0];
+        if (naturalCards.Any(c => c.rank != first.rank || IsJoker(c))) return false;
+        rank = first.rank;
+        return true;
+    }
+
+    private static string WildcardSuffix(int wildcardSlots) => wildcardSlots > 0 ? " (wildcard)" : "";
+
+    /// <summary>
+    /// True when naturalCards form exactly <paramref name="groupCount"/> distinct consecutive non-joker ranks,
+    /// each group within its target size (6 / groupCount), with total shortfall ≤ wildcardSlots.
+    /// </summary>
+    private static bool TryConsecutiveGroups(
+        IReadOnlyList<Card.CardId> naturalCards, int n, int wildcardSlots, int groupCount,
+        out List<Card.Rank> ranks)
+    {
+        ranks = null;
+        if (n != 6) return false;
+        if (naturalCards.Any(IsJoker)) return false;
+        var groups = GroupByRank(naturalCards);
+        if (groups.Count != groupCount) return false;
+        var r = SortedRankKeys(groups);
+        for (int i = 1; i < r.Count; i++)
+            if ((int)r[i] - (int)r[i - 1] != 1) return false;
+        int target = 6 / groupCount;
+        int shortfall = 0;
+        foreach (var rank in r)
+        {
+            if (groups[rank] > target) return false;
+            shortfall += target - groups[rank];
+        }
+        if (shortfall > wildcardSlots) return false;
+        ranks = r;
+        return true;
+    }
 }
