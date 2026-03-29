@@ -142,6 +142,10 @@ public static partial class SetValidator
     private static string FullHouseDesc(Card.Rank triple, Card.Rank pair, int wildcardSlots)
         => $"Full House: {RankName(triple, plural: true)} over {RankName(pair, plural: true)}{WildcardSuffix(wildcardSlots)}";
 
+    /// <summary>Full house where the pair is entirely wildcards.</summary>
+    private static string FullHouseWildcardPairDesc(Card.Rank triple, int wildcardSlots)
+        => $"Full House: {RankName(triple, plural: true)} over wildcard pair{WildcardSuffix(wildcardSlots)}";
+
     private static string WildcardSuffix(int wildcardSlots) => wildcardSlots > 0 ? " (wildcard)" : "";
 
     private static string RankName(Card.Rank rank, bool plural)

@@ -184,12 +184,11 @@ public static partial class SetValidator
         // n=5 is always the strongest possible straight flush; otherwise it's a rank-uniform set.
         if (naturalCards.Count == 0)
         {
-            var sfKey = (Card.Rank)((int)Card.Rank.Ace - (n - 1));
             return n switch
             {
                 2 => Identified(SetType.Pair,          RankSetDesc(SetType.Pair,     trumpRank, wildcardSlots), trumpRank),
                 3 => Identified(SetType.Triple,        RankSetDesc(SetType.Triple,   trumpRank, wildcardSlots), trumpRank),
-                5 => Identified(SetType.StraightFlush, StraightFlushDesc(sfKey, Card.Rank.Ace, Card.Suit.Hearts, wildcardSlots), sfKey),
+                5 => Identified(SetType.StraightFlush, StraightFlushDesc(Card.Rank.Ten, Card.Rank.Ace, Card.Suit.Hearts, wildcardSlots), Card.Rank.Ten),
                 _ when n >= 4 && n <= 8 => Identified(NBombType(n), RankSetDesc(NBombType(n), trumpRank, wildcardSlots), trumpRank),
                 _ => null
             };
@@ -376,11 +375,11 @@ public static partial class SetValidator
             keyRank = tr;
             return true;
         }
-        else // groups.Count == 1: wildcards fill the pair
+        else // groups.Count == 1: all naturals share one rank; wildcards fill the pair
         {
-            if (wildcardSlots != 2) return false;
+            if (wildcardSlots != MaxWildcardsPerSet) return false;
             if (!TryTriple(naturalCards, 0, out _, out keyRank)) return false;
-            desc = $"Full House: {RankName(keyRank, plural: true)} over wildcard pair (wildcard)";
+            desc = FullHouseWildcardPairDesc(keyRank, wildcardSlots);
             return true;
         }
     }

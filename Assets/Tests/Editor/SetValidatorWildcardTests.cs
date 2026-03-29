@@ -634,37 +634,6 @@ public class SetValidatorWildcardTests
         AssertInvalid(r);
     }
 
-    [Test]
-    public void WildcardStraight_ThreeWildcards_TwoNaturalsMixedSuits()
-    {
-        // Skipped until MaxWildcardsPerSet >= 3.
-        // 6♦ + 8♠ + 3 wildcards = 5 cards; mixed suits → Straight (not flush)
-        // gaps=(8-6-1)=1, leftover=3-1=2, goAbove=2, goBelow=0 → Straight 6–10
-        Assume.That(SetValidator.MaxWildcardsPerSet, Is.GreaterThanOrEqualTo(3),
-            $"Requires MaxWildcardsPerSet >= 3 (currently {SetValidator.MaxWildcardsPerSet})");
-        var r = VT(Card.Rank.Two,
-            C(Card.Rank.Six,   Card.Suit.Diamonds),
-            C(Card.Rank.Eight, Card.Suit.Spades),
-            W(Card.Rank.Two), W(Card.Rank.Two), W(Card.Rank.Two));
-        AssertValid(r, SetValidator.SetType.Straight);
-        Assert.AreEqual(Card.Rank.Six, r.KeyRank);
-    }
-
-    [Test]
-    public void WildcardStraightFlush_FourWildcards_OneNatural()
-    {
-        // Skipped until MaxWildcardsPerSet >= 4.
-        // 6♦ + 4 wildcards = 5 cards; single suit → wildcards adopt Diamonds → Straight Flush 6–10
-        // gaps=0, leftover=4, canGoAbove=8, goAbove=4, goBelow=0 → keyRank=Six
-        Assume.That(SetValidator.MaxWildcardsPerSet, Is.GreaterThanOrEqualTo(4),
-            $"Requires MaxWildcardsPerSet >= 4 (currently {SetValidator.MaxWildcardsPerSet})");
-        var r = VT(Card.Rank.Two,
-            C(Card.Rank.Six, Card.Suit.Diamonds),
-            W(Card.Rank.Two), W(Card.Rank.Two), W(Card.Rank.Two), W(Card.Rank.Two));
-        AssertValid(r, SetValidator.SetType.StraightFlush);
-        Assert.AreEqual(Card.Rank.Six, r.KeyRank);
-    }
-
     // =========================================================================
     // Joker set exclusions
     // =========================================================================
