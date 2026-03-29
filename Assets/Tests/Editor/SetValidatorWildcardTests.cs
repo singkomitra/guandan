@@ -267,15 +267,14 @@ public class SetValidatorWildcardTests
     }
 
     [Test]
-    public void WildcardStraight_SixCards()
+    public void WildcardStraight_SixCards_Invalid()
     {
-        Debug.Log("3 4 wildcard 6 7 8 = 6-card Straight 3–8 (wildcard fills 5)");
+        Debug.Log("3 4 wildcard 6 7 8 = 6 cards — straights are exactly 5 cards");
         var r = VT(Card.Rank.Two,
             C(Card.Rank.Three), C(Card.Rank.Four, Card.Suit.Hearts),
             W(Card.Rank.Two),
             C(Card.Rank.Six), C(Card.Rank.Seven, Card.Suit.Diamonds), C(Card.Rank.Eight));
-        AssertValid(r, SetValidator.SetType.Straight);
-        Assert.AreEqual(Card.Rank.Three, r.KeyRank);
+        AssertInvalid(r);
     }
 
     [Test]
@@ -444,6 +443,29 @@ public class SetValidatorWildcardTests
     // Wildcard Consecutive Triple Pairs
     // =========================================================================
 
+    // =========================================================================
+    // Scalability: extension logic with minimal natural cards
+    // With MaxWildcardsPerSet=2, a straight needs at least 3 natural cards.
+    // When MaxWildcardsPerSet is raised, add 1-natural + 4-wildcard cases here
+    // to confirm TryConsecutiveSequence correctly places a 5-card straight from
+    // a single anchor (e.g. 6♦ + 4 wildcards = Straight 4–8).
+    // =========================================================================
+
+    [Test]
+    public void WildcardStraight_BothWildcardsForcedBelow()
+    {
+        Debug.Log("Q♠ K♥ A♦ + two wildcards: canGoAbove=0, both extend below → 10–A");
+        // gaps=0, leftover=2, canGoAbove=Ace-Ace=0, goAbove=0, goBelow=2
+        // Queen(12) - 2 = 10 = Ten >= Two → valid; mixed suits so not StraightFlush
+        var r = VT(Card.Rank.Two,
+            C(Card.Rank.Queen),
+            C(Card.Rank.King,  Card.Suit.Hearts),
+            C(Card.Rank.Ace,   Card.Suit.Diamonds),
+            W(Card.Rank.Two), W(Card.Rank.Two));
+        AssertValid(r, SetValidator.SetType.Straight);
+        Assert.AreEqual(Card.Rank.Ten, r.KeyRank);
+    }
+
     [Test]
     public void WildcardConsecutiveTriples_WildcardFillsSecondTriple()
     {
@@ -589,6 +611,58 @@ public class SetValidatorWildcardTests
             C(Card.Rank.Seven),
             W(Card.Rank.Two), W(Card.Rank.Two));
         AssertInvalid(r);
+    }
+
+    // =========================================================================
+    // Scalability: wildcards-heavy extension paths
+    // Tests below use Assume.That(MaxWildcardsPerSet >= N) so they are skipped
+    // today (cap=2) but run automatically once the constant is raised, verifying
+    // the gap-sum and extension logic holds for more wildcards without any code
+    // changes to SetValidator.
+    // =========================================================================
+
+    [Test]
+    public void WildcardStraight_SixCards_BothWildcardsForcedBelow_Invalid()
+    {
+        Debug.Log("J♠ Q♥ K♦ A♣ + two wildcards = 6 cards — straights are exactly 5 cards");
+        var r = VT(Card.Rank.Two,
+            C(Card.Rank.Jack),
+            C(Card.Rank.Queen, Card.Suit.Hearts),
+            C(Card.Rank.King,  Card.Suit.Diamonds),
+            C(Card.Rank.Ace,   Card.Suit.Clubs),
+            W(Card.Rank.Two), W(Card.Rank.Two));
+        AssertInvalid(r);
+    }
+
+    [Test]
+    public void WildcardStraight_ThreeWildcards_TwoNaturalsMixedSuits()
+    {
+        // Skipped until MaxWildcardsPerSet >= 3.
+        // 6♦ + 8♠ + 3 wildcards = 5 cards; mixed suits → Straight (not flush)
+        // gaps=(8-6-1)=1, leftover=3-1=2, goAbove=2, goBelow=0 → Straight 6–10
+        Assume.That(SetValidator.MaxWildcardsPerSet, Is.GreaterThanOrEqualTo(3),
+            $"Requires MaxWildcardsPerSet >= 3 (currently {SetValidator.MaxWildcardsPerSet})");
+        var r = VT(Card.Rank.Two,
+            C(Card.Rank.Six,   Card.Suit.Diamonds),
+            C(Card.Rank.Eight, Card.Suit.Spades),
+            W(Card.Rank.Two), W(Card.Rank.Two), W(Card.Rank.Two));
+        AssertValid(r, SetValidator.SetType.Straight);
+        Assert.AreEqual(Card.Rank.Six, r.KeyRank);
+    }
+
+    [Test]
+    public void WildcardStraightFlush_FourWildcards_OneNatural()
+    {
+        // Skipped until MaxWildcardsPerSet >= 4.
+        // 6♦ + 4 wildcards = 5 cards; single suit → wildcards adopt Diamonds → Straight Flush 6–10
+        // gaps=0, leftover=4, canGoAbove=8, goAbove=4, goBelow=0 → keyRank=Six
+        Assume.That(SetValidator.MaxWildcardsPerSet, Is.GreaterThanOrEqualTo(4),
+            $"Requires MaxWildcardsPerSet >= 4 (currently {SetValidator.MaxWildcardsPerSet})");
+        var r = VT(Card.Rank.Two,
+            C(Card.Rank.Six, Card.Suit.Diamonds),
+            W(Card.Rank.Two), W(Card.Rank.Two), W(Card.Rank.Two), W(Card.Rank.Two));
+        AssertValid(r, SetValidator.SetType.StraightFlush);
+        Assert.AreEqual(Card.Rank.Six, r.KeyRank);
     }
 
     // =========================================================================
