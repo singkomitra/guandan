@@ -32,7 +32,6 @@ jobs:
           unityVersion: 6000.3.11f1
           testMode: editmode
           artifactsPath: test-results
-          coverageOptions: ''
 
       - uses: actions/upload-artifact@v4
         if: always()
