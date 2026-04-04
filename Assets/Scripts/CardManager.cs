@@ -196,7 +196,7 @@ public class CardManager : MonoBehaviour
     }
 
     /// <summary>
-    /// Returns a shuffled 108-card double deck (two copies of each card, deckIndex 0 and 1).
+    /// Returns a shuffled 108-card (currently 104, need to add jokers) double deck (two copies of each card, deckIndex 0 and 1).
     /// Used by DealManager for authoritative server-side dealing.
     /// </summary>
     public List<Card.CardId> GetShuffledDoubleDeck(int seed = 0)

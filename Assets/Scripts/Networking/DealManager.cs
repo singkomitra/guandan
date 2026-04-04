@@ -60,11 +60,22 @@ public class DealManager : NetworkBehaviour
             return;
         }
 
+        #if !DEV_BUILD
+            if (players.Count != 4 && players.Count != 6)
+            {
+                Debug.LogError($"[DealManager] Invalid player count ({players.Count}). Guandan requires 4 or 6 players.");
+                return;
+            }
+        #endif
+
         players.Sort((a, b) =>
             a.connectionToClient.connectionId.CompareTo(b.connectionToClient.connectionId));
 
         int seed = Random.Range(1, int.MaxValue); // server owns the entropy
         var deck = cardManager.GetShuffledDoubleDeck(seed);
+
+        if (deck.Count % players.Count != 0)
+            Debug.LogWarning($"[DealManager] {deck.Count} cards not evenly divisible among {players.Count} players; {deck.Count % players.Count} card(s) will not be dealt.");
 
         int handSize = deck.Count / players.Count;
         Debug.Log($"[DealManager] Dealing {deck.Count} cards to {players.Count} players ({handSize} each, seed={seed})");
@@ -80,12 +91,11 @@ public class DealManager : NetworkBehaviour
     [TargetRpc]
     private void TargetRpcReceiveHand(NetworkConnectionToClient _, Card.CardId[] hand)
     {
-        var handManager = FindFirstObjectByType<HandManager>();
-        if (handManager == null)
+        if (HandManager.Instance == null)
         {
-            Debug.LogError("[DealManager] No HandManager found on client — cannot populate hand.");
+            Debug.LogError("[DealManager] HandManager.Instance is null on client — cannot populate hand.");
             return;
         }
-        handManager.ReceiveHand(hand);
+        HandManager.Instance.ReceiveHand(hand);
     }
 }
