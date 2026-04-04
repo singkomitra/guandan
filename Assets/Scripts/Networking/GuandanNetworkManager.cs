@@ -23,15 +23,15 @@ public class GuandanNetworkManager : NetworkManager
     {
         base.OnServerReady(conn);
         Debug.Log($"[Server] Client ready — connId={conn.connectionId}");
-
-        if (SceneManager.GetActiveScene().name == "GameScene")
-            DealManager.Instance?.OnConnectionReady();
     }
 
     public override void OnServerAddPlayer(NetworkConnectionToClient conn)
     {
         base.OnServerAddPlayer(conn);
         Debug.Log($"[Server] Player spawned for connId={conn.connectionId}");
+
+        if (SceneManager.GetActiveScene().name == "GameScene")
+            DealManager.Instance?.OnConnectionReady();
     }
 
     // CLIENT-SIDE: logs appear in the joining client's console
