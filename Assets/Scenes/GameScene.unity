@@ -952,6 +952,7 @@ MonoBehaviour:
   syncDirection: 0
   syncMode: 0
   syncInterval: 0
+  _cardManager: {fileID: 313375000}
 --- !u!114 &1704199693
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1377,3 +1378,4 @@ SceneRoots:
   - {fileID: 1497969741}
   - {fileID: 1888149015}
   - {fileID: 1704199694}
+  - {fileID: 931816168}

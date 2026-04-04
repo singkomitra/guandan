@@ -15,6 +15,8 @@ public class DealManager : NetworkBehaviour
 {
     public static DealManager Instance { get; private set; }
 
+    [SerializeField] private CardManager _cardManager;
+
     private bool _hasDealt;
 
     private void Awake()  => Instance = this;
@@ -30,7 +32,7 @@ public class DealManager : NetworkBehaviour
         if (_hasDealt) return;
 
         foreach (var conn in NetworkServer.connections.Values)
-            if (!conn.isReady) return; // at least one client not yet ready
+            if (conn.identity == null) return; // at least one Player not yet spawned
 
         _hasDealt = true;
         DealCards();
@@ -39,10 +41,9 @@ public class DealManager : NetworkBehaviour
     [Server]
     private void DealCards()
     {
-        var cardManager = FindFirstObjectByType<CardManager>();
-        if (cardManager == null)
+        if (_cardManager == null)
         {
-            Debug.LogError("[DealManager] No CardManager found in GameScene.");
+            Debug.LogError("[DealManager] CardManager is not assigned. Wire it in the Inspector.");
             return;
         }
 
@@ -72,7 +73,7 @@ public class DealManager : NetworkBehaviour
             a.connectionToClient.connectionId.CompareTo(b.connectionToClient.connectionId));
 
         int seed = Random.Range(1, int.MaxValue); // server owns the entropy
-        var deck = cardManager.GetShuffledDoubleDeck(seed);
+        var deck = _cardManager.GetShuffledDoubleDeck(seed);
 
         if (deck.Count % players.Count != 0)
             Debug.LogWarning($"[DealManager] {deck.Count} cards not evenly divisible among {players.Count} players; {deck.Count % players.Count} card(s) will not be dealt.");
