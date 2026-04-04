@@ -161,13 +161,14 @@ public class CardManager : MonoBehaviour
 
     public Sprite GetSprite(Card.CardId id)
     {
-        _spriteById.TryGetValue(id, out var s);
+        // Sprites are shared between the two decks — strip deckIndex for lookup.
+        _spriteById.TryGetValue(new Card.CardId(id.suit, id.rank, 0), out var s);
         return s;
     }
 
     public GameObject SpawnCard(Card.CardId id, Transform parent = null)
     {
-        if (!_spriteById.TryGetValue(id, out var sprite))
+        if (!_spriteById.TryGetValue(new Card.CardId(id.suit, id.rank, 0), out var sprite))
         {
             Debug.LogError($"CardManager: No sprite for {id}");
             return null;
@@ -186,16 +187,34 @@ public class CardManager : MonoBehaviour
         return go;
     }
 
-    /// <summary>Returns a fresh shuffled copy of the deck.</summary>
+    /// <summary>Returns a fresh shuffled copy of the single deck (deckIndex=0). Used for local testing.</summary>
     public List<Card.CardId> GetShuffledDeck(int seed = 0)
     {
         var list = new List<Card.CardId>(_fullDeck);
+        Shuffle(list, seed);
+        return list;
+    }
+
+    /// <summary>
+    /// Returns a shuffled 108-card double deck (two copies of each card, deckIndex 0 and 1).
+    /// Used by DealManager for authoritative server-side dealing.
+    /// </summary>
+    public List<Card.CardId> GetShuffledDoubleDeck(int seed = 0)
+    {
+        var list = new List<Card.CardId>(_fullDeck.Count * 2);
+        foreach (var id in _fullDeck) list.Add(new Card.CardId(id.suit, id.rank, 0));
+        foreach (var id in _fullDeck) list.Add(new Card.CardId(id.suit, id.rank, 1));
+        Shuffle(list, seed);
+        return list;
+    }
+
+    private static void Shuffle(List<Card.CardId> list, int seed)
+    {
         var rng = seed == 0 ? new System.Random() : new System.Random(seed);
         for (int i = list.Count - 1; i > 0; i--)
         {
             int j = rng.Next(i + 1);
             (list[i], list[j]) = (list[j], list[i]);
         }
-        return list;
     }
 }

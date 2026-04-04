@@ -8,15 +8,27 @@ public class Card : MonoBehaviour
     public enum Rank { Two = 2, Three, Four, Five, Six, Seven, Eight, Nine, Ten, Jack, Queen, King, Ace, BlackJoker = 15, RedJoker = 16 }
 
     [Serializable]
-    public struct CardId
+    public struct CardId : IEquatable<CardId>
     {
         public Suit suit;
         public Rank rank;
-        public CardId(Suit s, Rank r) { suit = s; rank = r; }
+        /// <summary>0 for the first deck, 1 for the second. Distinguishes duplicate cards in the double-deck.</summary>
+        public byte deckIndex;
+
+        public CardId(Suit s, Rank r, byte d = 0) { suit = s; rank = r; deckIndex = d; }
+
+        public bool Equals(CardId other) =>
+            suit == other.suit && rank == other.rank && deckIndex == other.deckIndex;
+
+        public override bool Equals(object obj) => obj is CardId other && Equals(other);
+
+        public override int GetHashCode() =>
+            HashCode.Combine((int)suit, (int)rank, deckIndex);
+
         public override string ToString() =>
-            rank == Rank.BlackJoker ? "Black Joker" :
-            rank == Rank.RedJoker   ? "Red Joker"   :
-            $"{rank} of {suit}";
+            rank == Rank.BlackJoker ? $"Black Joker (d{deckIndex})" :
+            rank == Rank.RedJoker   ? $"Red Joker (d{deckIndex})"   :
+            $"{rank} of {suit} (d{deckIndex})";
     }
 
     private Image _cardImage; // private, will be set dynamically
