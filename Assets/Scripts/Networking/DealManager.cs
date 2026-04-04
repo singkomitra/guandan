@@ -79,6 +79,9 @@ public class DealManager : NetworkBehaviour
         if (deck.Count % players.Count != 0)
             Debug.LogWarning($"[DealManager] {deck.Count} cards not evenly divisible among {players.Count} players; {deck.Count % players.Count} card(s) will not be dealt.");
 
+        if (deck.Count % players.Count != 0)
+            Debug.LogWarning($"[DealManager] {deck.Count} cards not evenly divisible among {players.Count} players; {deck.Count % players.Count} card(s) will not be dealt.");
+
         int handSize = deck.Count / players.Count;
         Debug.Log($"[DealManager] Dealing {deck.Count} cards to {players.Count} players ({handSize} each, seed={seed})");
 
