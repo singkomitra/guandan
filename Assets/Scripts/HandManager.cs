@@ -80,6 +80,7 @@ public class HandManager : MonoBehaviour
         _canvas    = _handView ? _handView.GetComponentInParent<Canvas>() : null;
     }
 
+
     private void Start()
     {
         if (_manager == null) _manager = FindFirstObjectByType<CardManager>();
@@ -311,7 +312,13 @@ public class HandManager : MonoBehaviour
     private void ReparentToHand(Card.CardId id, RectTransform rt)
     {
         rt.SetParent(_handView, worldPositionStays: true);
+        SetSiblingIndexFromOrder(id, rt);
+    }
 
+    // Set sibling index within _handView to match this card's position in _order.
+    // Cards earlier in _order that are still children of _handView determine the index.
+    private void SetSiblingIndexFromOrder(Card.CardId id, RectTransform rt)
+    {
         int siblingIndex = 0;
         foreach (var orderId in _order)
         {
