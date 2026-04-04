@@ -6,7 +6,7 @@ using Mirror;
 /// Server-authoritative deal manager. Lives as a scene NetworkBehaviour in GameScene.
 ///
 /// Flow:
-///   1. GuandanNetworkManager.OnServerReady calls OnConnectionReady() for each client.
+///   1. GuandanNetworkManager.OnServerAddPlayer calls OnConnectionReady() for each client.
 ///   2. Once every connected client is scene-ready, DealCards() runs once on the server.
 ///   3. Each player receives only their own hand via TargetRpc — no client sees another's cards.
 ///
@@ -21,8 +21,8 @@ public class DealManager : NetworkBehaviour
     private void OnDestroy() { if (Instance == this) Instance = null; }
 
     /// <summary>
-    /// Called by GuandanNetworkManager.OnServerReady each time a client finishes loading
-    /// the GameScene. Deals once all connected clients are ready.
+    /// Called by GuandanNetworkManager.OnServerAddPlayer each time a client has their
+    /// Player object spawned in GameScene. Deals once all connected clients are ready.
     /// </summary>
     [Server]
     public void OnConnectionReady()
