@@ -23,6 +23,9 @@ public class GuandanNetworkManager : NetworkManager
     {
         base.OnServerReady(conn);
         Debug.Log($"[Server] Client ready — connId={conn.connectionId}");
+
+        if (SceneManager.GetActiveScene().name == "GameScene")
+            DealManager.Instance?.OnConnectionReady();
     }
 
     public override void OnServerAddPlayer(NetworkConnectionToClient conn)

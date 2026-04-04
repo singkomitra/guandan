@@ -36,6 +36,7 @@ public class DealManager : NetworkBehaviour
 
         DealCards();
         _hasDealt = true;
+        DealCards();
     }
 
     [Server]
