@@ -62,6 +62,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4a10869e0f89184409f3e69825cb9f85, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Player
+  syncMethod: 0
   syncDirection: 0
   syncMode: 0
   syncInterval: 0
+  playerName: 
+  isReady: 0
+  isHost: 0
