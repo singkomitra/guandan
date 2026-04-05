@@ -17,6 +17,7 @@ public sealed class TeamData
     public TeamData(int teamIndex, IReadOnlyList<PlayerData> players)
     {
         TeamIndex = teamIndex;
-        Players   = players;
+        Players   = new System.Collections.ObjectModel.ReadOnlyCollection<PlayerData>(
+                        new List<PlayerData>(players));
     }
 }

@@ -56,6 +56,12 @@ public class SeatingManager : MonoBehaviour
 
     private void Awake()
     {
+        if (Instance != null && Instance != this)
+        {
+            Debug.LogWarning("[SeatingManager] Duplicate instance destroyed.");
+            Destroy(gameObject);
+            return;
+        }
         Instance = this;
     }
 
