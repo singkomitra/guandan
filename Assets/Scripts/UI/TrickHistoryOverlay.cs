@@ -183,11 +183,14 @@ public class TrickHistoryOverlay : MonoBehaviour
         rt.pivot            = new Vector2(0.5f, 0.5f);
         rt.anchoredPosition = new Vector2(x, 0f);
         rt.sizeDelta        = new Vector2(_labelWidth, 60f);
-        var tmp             = go.AddComponent<TextMeshProUGUI>();
-        tmp.text            = text;
-        tmp.alignment       = alignment;
-        tmp.fontSize        = 28f;
-        tmp.color           = Color.white;
+        var tmp                  = go.AddComponent<TextMeshProUGUI>();
+        tmp.text                 = text;
+        tmp.alignment            = alignment;
+        tmp.enableAutoSizing     = true;
+        tmp.fontSizeMin          = 16f;
+        tmp.fontSizeMax          = 28f;
+        tmp.enableWordWrapping   = false;
+        tmp.color                = Color.white;
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

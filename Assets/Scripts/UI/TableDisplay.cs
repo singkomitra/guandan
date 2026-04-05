@@ -31,14 +31,16 @@ public class TableDisplay : MonoBehaviour, IPointerClickHandler, IDropHandler
     [Header("Layout")]
     [Tooltip("Horizontal distance between card centres.")]
     [SerializeField] private float _cardSpacing = 110f;
+    [Tooltip("Max random offset (px) applied to each card's landing position.")]
+    [SerializeField, Range(0f, 30f)] private float _placementJitter = 8f;
 
     [Header("Animation")]
     [Tooltip("Lerp speed for all card animations.")]
     [SerializeField] private float _animSpeed = 12f;
     [Tooltip("Scale of the most recently played set.")]
     [SerializeField, Range(0.1f, 1f)] private float _cardDisplayScale = 0.6f;
-    [Tooltip("Scale multiplier applied to sets behind the current one.")]
-    [SerializeField, Range(0.1f, 1f)] private float _backgroundScaleFactor = 0.8f;
+    [Tooltip("Positional offset applied to sets pushed behind the current one, so they peek out.")]
+    [SerializeField] private Vector2 _stackOffset = new Vector2(6f, -6f);
 
     // ── State ────────────────────────────────────────────────────────────────
 
@@ -98,14 +100,13 @@ public class TableDisplay : MonoBehaviour, IPointerClickHandler, IDropHandler
         StopAllCoroutines();
         DestroyAll(_exitingCards);
 
-        // Push the current set into the background.
-        var backgroundScale = Vector3.one * (_cardDisplayScale * _backgroundScaleFactor);
+        // Push the current set into the background — same scale, slight offset so it peeks out.
         foreach (var go in _currentCards)
         {
             if (go == null) continue;
             var brt = go.GetComponent<RectTransform>();
             _previousCards.Add(go);
-            StartCoroutine(FlyToTarget(brt, brt.anchoredPosition, backgroundScale));
+            StartCoroutine(FlyToTarget(brt, brt.anchoredPosition + _stackOffset, Vector3.one * _cardDisplayScale));
         }
         _currentCards.Clear();
 
@@ -123,7 +124,10 @@ public class TableDisplay : MonoBehaviour, IPointerClickHandler, IDropHandler
             rt.SetAsLastSibling();
 
             _currentCards.Add(rt.gameObject);
-            StartCoroutine(FlyToTarget(rt, new Vector2(startX + i * _cardSpacing, 0f),
+            var jitter = new Vector2(
+                UnityEngine.Random.Range(-_placementJitter, _placementJitter),
+                UnityEngine.Random.Range(-_placementJitter, _placementJitter));
+            StartCoroutine(FlyToTarget(rt, new Vector2(startX + i * _cardSpacing, 0f) + jitter,
                                        Vector3.one * _cardDisplayScale));
         }
     }
