@@ -19,7 +19,7 @@ public class DealManager : NetworkBehaviour
 
     [Header("Dev")]
     [Tooltip("Cards per player in editor and dev builds. 0 = use deck / player count.")]
-    [SerializeField] private int _devHandSize = 26;
+    [SerializeField] private readonly int _devHandSize = 26;
 
     private bool _hasDealt;
 

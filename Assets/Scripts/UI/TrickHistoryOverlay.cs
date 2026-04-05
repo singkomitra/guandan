@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -28,7 +29,7 @@ public class TrickHistoryOverlay : MonoBehaviour
 
     [Header("Layout")]
     [SerializeField] private float _rowHeight  = 120f;
-    [SerializeField] private float _cardWidth  = 70f;
+    [SerializeField] private readonly float _cardWidth  = 70f;
     [SerializeField] private float _cardHeight = 100f;
     [SerializeField] private float _cardGap    = 8f;
     [SerializeField] private float _labelWidth = 220f;
@@ -207,8 +208,8 @@ public class TrickHistoryOverlay : MonoBehaviour
 
     private void ClearEntries()
     {
-        foreach (var go in _entries)
-            if (go != null) Destroy(go);
+        foreach (var go in _entries.Where(go => go != null))
+            Destroy(go);
         _entries.Clear();
     }
 

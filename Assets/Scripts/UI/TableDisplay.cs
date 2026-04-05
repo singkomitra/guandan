@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
@@ -32,13 +33,13 @@ public class TableDisplay : MonoBehaviour, IPointerClickHandler, IDropHandler
     [Tooltip("Horizontal distance between card centres.")]
     [SerializeField] private float _cardSpacing = 110f;
     [Tooltip("Max random offset (px) applied to each card's landing position.")]
-    [SerializeField, Range(0f, 30f)] private float _placementJitter = 8f;
+    [SerializeField, Range(0f, 30f)] private readonly float _placementJitter = 8f;
 
     [Header("Animation")]
     [Tooltip("Lerp speed for all card animations.")]
-    [SerializeField] private float _animSpeed = 12f;
+    [SerializeField] private readonly float _animSpeed = 12f;
     [Tooltip("Scale of the most recently played set.")]
-    [SerializeField, Range(0.1f, 1f)] private float _cardDisplayScale = 0.6f;
+    [SerializeField, Range(0.1f, 1f)] private readonly float _cardDisplayScale = 0.6f;
     [Tooltip("Positional offset applied to sets pushed behind the current one, so they peek out.")]
     [SerializeField] private Vector2 _stackOffset = new Vector2(6f, -6f);
 
@@ -101,9 +102,8 @@ public class TableDisplay : MonoBehaviour, IPointerClickHandler, IDropHandler
         DestroyAll(_exitingCards);
 
         // Push the current set into the background — same scale, slight offset so it peeks out.
-        foreach (var go in _currentCards)
+        foreach (var go in _currentCards.Where(go => go != null))
         {
-            if (go == null) continue;
             var brt = go.GetComponent<RectTransform>();
             _previousCards.Add(go);
             StartCoroutine(FlyToTarget(brt, brt.anchoredPosition + _stackOffset, Vector3.one * _cardDisplayScale));
@@ -143,9 +143,8 @@ public class TableDisplay : MonoBehaviour, IPointerClickHandler, IDropHandler
         _previousCards.Clear();
         _exitingCards.AddRange(toExit);
 
-        foreach (var go in toExit)
+        foreach (var go in toExit.Where(go => go != null))
         {
-            if (go == null) continue;
             var captured = go;
             var rt = captured.GetComponent<RectTransform>();
             StartCoroutine(FlyToTarget(rt, rt.anchoredPosition, Vector3.zero, () =>
@@ -179,8 +178,8 @@ public class TableDisplay : MonoBehaviour, IPointerClickHandler, IDropHandler
 
     private static void DestroyAll(List<GameObject> list)
     {
-        foreach (var go in list)
-            if (go != null) Destroy(go);
+        foreach (var go in list.Where(go => go != null))
+            Destroy(go);
         list.Clear();
     }
 

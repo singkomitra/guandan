@@ -164,7 +164,8 @@ public class HandManager : MonoBehaviour
     [ContextMenu("Clear Hand")]
     public void ClearHand()
     {
-        foreach (var id in new List<Card.CardId>(_cardRects.Keys))
+        var ids = new List<Card.CardId>(_cardRects.Keys);
+        foreach (var id in ids)
         {
             var rt = ReleaseCard(id);
             if (rt != null) Destroy(rt.gameObject);
