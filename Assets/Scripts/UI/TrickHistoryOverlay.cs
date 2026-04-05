@@ -1,7 +1,5 @@
 using System;
 using System.Collections;
-// ── BackdropClickHandler ──────────────────────────────────────────────────────
-// Attach to the Backdrop Image child of the HistoryCanvas. Dismisses the overlay.
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;

@@ -51,7 +51,8 @@ public class TableDisplay : MonoBehaviour, IPointerClickHandler, IDropHandler
     private void Awake()
     {
         // Make _cardContainer hit-testable so IPointerClickHandler fires.
-        var img           = _cardContainer.gameObject.AddComponent<Image>();
+        var img           = _cardContainer.gameObject.GetComponent<Image>()
+                            ?? _cardContainer.gameObject.AddComponent<Image>();
         img.color         = Color.clear;
         img.raycastTarget = true;
         if (_cardContainer.sizeDelta == Vector2.zero)
