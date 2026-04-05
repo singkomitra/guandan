@@ -34,8 +34,8 @@ public class DealManager : NetworkBehaviour
         foreach (var conn in NetworkServer.connections.Values)
             if (conn.identity == null) return; // at least one Player not yet spawned
 
-        _hasDealt = true;
         DealCards();
+        _hasDealt = true;
     }
 
     [Server]
