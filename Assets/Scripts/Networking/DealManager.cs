@@ -72,6 +72,11 @@ public class DealManager : NetworkBehaviour
         players.Sort((a, b) =>
             a.connectionToClient.connectionId.CompareTo(b.connectionToClient.connectionId));
 
+        if (SeatingManager.Instance != null)
+            SeatingManager.Instance.BuildSeating(players);
+        else
+            Debug.LogWarning("[DealManager] SeatingManager.Instance is null — seat/team data will not be available.");
+
         int seed = Random.Range(1, int.MaxValue); // server owns the entropy
         var deck = _cardManager.GetShuffledDoubleDeck(seed);
 
