@@ -17,6 +17,10 @@ public class DealManager : NetworkBehaviour
 
     [SerializeField] private CardManager _cardManager;
 
+    [Header("Dev")]
+    [Tooltip("Cards per player in editor and dev builds. 0 = use deck / player count.")]
+    [SerializeField] private readonly int _devHandSize = 26;
+
     private bool _hasDealt;
 
     private void Awake()  => Instance = this;
@@ -36,6 +40,7 @@ public class DealManager : NetworkBehaviour
 
         DealCards();
         _hasDealt = true;
+        DealCards();
     }
 
     [Server]
@@ -61,7 +66,7 @@ public class DealManager : NetworkBehaviour
             return;
         }
 
-        #if !DEV_BUILD
+        #if !DEV_BUILD && !UNITY_EDITOR
             if (players.Count != 4 && players.Count != 6)
             {
                 Debug.LogError($"[DealManager] Invalid player count ({players.Count}). Guandan requires 4 or 6 players.");
@@ -82,10 +87,14 @@ public class DealManager : NetworkBehaviour
         int seed = Random.Range(1, int.MaxValue); // server owns the entropy
         var deck = _cardManager.GetShuffledDoubleDeck(seed);
 
-        if (deck.Count % players.Count != 0)
-            Debug.LogWarning($"[DealManager] {deck.Count} cards not evenly divisible among {players.Count} players; {deck.Count % players.Count} card(s) will not be dealt.");
+        #if UNITY_EDITOR || DEV_BUILD
+            int handSize = players.Count < 4 ? _devHandSize : deck.Count / players.Count;
+        #else
+            if (deck.Count % players.Count != 0)
+                Debug.LogWarning($"[DealManager] {deck.Count} cards not evenly divisible among {players.Count} players; {deck.Count % players.Count} card(s) will not be dealt.");
 
-        int handSize = deck.Count / players.Count;
+            int handSize = deck.Count / players.Count;
+        #endif
         Debug.Log($"[DealManager] Dealing {deck.Count} cards to {players.Count} players ({handSize} each, seed={seed})");
 
         for (int i = 0; i < players.Count; i++)

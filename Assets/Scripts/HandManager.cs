@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using Mirror;
 using UnityEngine.UI;
 
 /// <summary>
@@ -99,6 +100,11 @@ public class HandManager : MonoBehaviour
         CardDrag.AnyDragEnd       += OnAnyDragEnd;
         CardDrag.AnyDragMoved     += OnAnyDragMoved;
         CardHover.AnyHoverChanged += OnAnyHoverChanged;
+
+        #if UNITY_EDITOR || DEV_BUILD
+                if (!NetworkClient.active)
+                    DealNewHand();
+        #endif
     }
 
     private void OnDestroy()
@@ -158,17 +164,12 @@ public class HandManager : MonoBehaviour
     [ContextMenu("Clear Hand")]
     public void ClearHand()
     {
-        foreach (var c in _moveRoutines.Values)
-            if (c != null) StopCoroutine(c);
-        _moveRoutines.Clear();
-
-        foreach (var rt in _cardRects.Values)
+        var ids = new List<Card.CardId>(_cardRects.Keys);
+        foreach (var id in ids)
+        {
+            var rt = ReleaseCard(id);
             if (rt != null) Destroy(rt.gameObject);
-
-        _order.Clear();
-        _cardRects.Clear();
-        _dragging.Clear();
-        _hovered.Clear();
+        }
         _insertionHint = -1;
     }
 
@@ -345,21 +346,25 @@ public class HandManager : MonoBehaviour
 
     // ── Commit ───────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Fired when cards are committed. Subscribers receive the RectTransforms and
+    /// take full ownership — responsible for positioning and eventual destruction.
+    /// Local plays only; subscribe to TrickManager.SetPlayed for remote plays.
+    /// </summary>
+    public static event Action<IReadOnlyList<(Card.CardId id, RectTransform rt)>> CardsPlayed;
+
     private void OnSelectionCommitted(IReadOnlyList<Card.CardId> committed, SetValidator.ValidationResult _)
     {
+        var played = new List<(Card.CardId, RectTransform)>(committed.Count);
         foreach (var id in committed)
         {
-            _order.Remove(id);
-            _dragging.Remove(id);
-            _hovered.Remove(id);
-            if (_cardRects.TryGetValue(id, out var rt))
-            {
-                PlayCardVisual(rt);
-                _cardRects.Remove(id);
-            }
+            var rt = ReleaseCard(id);
+            if (rt != null) played.Add((id, rt));
         }
         _insertionHint = -1;
         RefreshLayout(_layoutSpeed);
+
+        if (played.Count > 0) CardsPlayed?.Invoke(played);
     }
 
     private void OnCommitFailed(SetValidator.ValidationResult result)
@@ -371,25 +376,6 @@ public class HandManager : MonoBehaviour
             _                                  => (AnnouncementType.Error,   "Not Valid"),
         };
         AnnouncementOverlay.Show(type, message);
-    }
-
-    private void PlayCardVisual(RectTransform rt)
-    {
-        rt.localRotation = Quaternion.identity;
-        var img = rt.GetComponent<Image>();
-        if (img != null) img.raycastTarget = false;
-
-        var root = _canvas != null ? _canvas.rootCanvas.transform : null;
-        if (root != null)
-        {
-            rt.SetParent(root, true);
-            // Place played card behind the hand's root-canvas ancestor.
-            Transform handRoot = _handView;
-            while (handRoot.parent != null && handRoot.parent != root)
-                handRoot = handRoot.parent;
-            if (handRoot.parent == root)
-                rt.SetSiblingIndex(handRoot.GetSiblingIndex());
-        }
     }
 
     // ── Hand-drop return ─────────────────────────────────────────────────────
@@ -416,6 +402,26 @@ public class HandManager : MonoBehaviour
             ReparentToHand(card.Id, rt);
 
         RefreshLayout(_returnSpeed);
+    }
+
+    // ── Card release ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Removes a card from all hand tracking and stops its move routine.
+    /// Returns the RectTransform so the caller decides what to do with the GO.
+    /// </summary>
+    private RectTransform ReleaseCard(Card.CardId id)
+    {
+        _order.Remove(id);
+        _dragging.Remove(id);
+        _hovered.Remove(id);
+        if (_moveRoutines.TryGetValue(id, out var routine) && routine != null)
+        {
+            StopCoroutine(routine);
+            _moveRoutines.Remove(id);
+        }
+        _cardRects.Remove(id, out var rt);
+        return rt;
     }
 
     // ── Layout ───────────────────────────────────────────────────────────────
