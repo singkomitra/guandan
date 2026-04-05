@@ -13,7 +13,7 @@ using UnityEngine;
 ///
 /// Turn order:
 ///   Seats are visited in ascending order: 0 → 1 → 2 → … → (N−1) → 0.
-///   <see cref="NextSeat"/> wraps automatically.
+///   <see cref="NextSeat(int, int)"/> wraps automatically.
 ///
 /// Populated by <see cref="DealManager"/> (server-side) once all players have connected.
 /// Must be present as a scene object in GameScene.
@@ -42,6 +42,16 @@ public class SeatingManager : MonoBehaviour
     /// </summary>
     public IReadOnlyList<int> TurnOrder { get; private set; } = System.Array.Empty<int>();
 
+    // ── Nested type ───────────────────────────────────────────────────────────
+
+    /// <summary>Minimal player descriptor used by <see cref="BuildSeatingData"/>.</summary>
+    public readonly struct PlayerSlot
+    {
+        public readonly string DisplayName;
+        public readonly uint   NetId;
+        public PlayerSlot(string displayName, uint netId) { DisplayName = displayName; NetId = netId; }
+    }
+
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     private void Awake()
@@ -63,20 +73,40 @@ public class SeatingManager : MonoBehaviour
     /// </summary>
     public void BuildSeating(IReadOnlyList<Player> orderedPlayers)
     {
-        int n = orderedPlayers.Count;
-        var players = new PlayerData[n];
+        var slots = new PlayerSlot[orderedPlayers.Count];
+        for (int i = 0; i < orderedPlayers.Count; i++)
+            slots[i] = new PlayerSlot(orderedPlayers[i].playerName, orderedPlayers[i].netId);
+
+        var (players, teams, order) = BuildSeatingData(slots);
+        Players   = players;
+        Teams     = teams;
+        TurnOrder = order;
+
+        Debug.Log($"[SeatingManager] Seating built: {players.Length} players | " +
+                  $"Team 0 seats: [{SeatList(teams[0].Players)}] | " +
+                  $"Team 1 seats: [{SeatList(teams[1].Players)}]");
+    }
+
+    /// <summary>
+    /// Pure seating logic with no Unity or Mirror dependencies. Assigns seats, teams,
+    /// and turn order from an ordered list of player descriptors.
+    /// Exposed as <c>public static</c> so it can be called directly from tests.
+    /// </summary>
+    public static (PlayerData[] players, TeamData[] teams, int[] turnOrder)
+        BuildSeatingData(IReadOnlyList<PlayerSlot> slots)
+    {
+        int n = slots.Count;
+        var players   = new PlayerData[n];
         var teamLists = new List<PlayerData>[2] { new(), new() };
 
         for (int seat = 0; seat < n; seat++)
         {
-            var p  = orderedPlayers[seat];
-            var pd = new PlayerData(seat, p.playerName, p.netId);
+            var pd = new PlayerData(seat, slots[seat].DisplayName, slots[seat].NetId);
             players[seat] = pd;
             teamLists[pd.TeamIndex].Add(pd);
         }
 
-        Players = players;
-        Teams = new TeamData[]
+        var teams = new TeamData[]
         {
             new TeamData(0, teamLists[0]),
             new TeamData(1, teamLists[1]),
@@ -84,18 +114,20 @@ public class SeatingManager : MonoBehaviour
 
         var order = new int[n];
         for (int i = 0; i < n; i++) order[i] = i;
-        TurnOrder = order;
 
-        Debug.Log($"[SeatingManager] Seating built: {n} players | " +
-                  $"Team 0 seats: [{string.Join(", ", teamLists[0].ConvertAll(p => p.SeatIndex.ToString()))}] | " +
-                  $"Team 1 seats: [{string.Join(", ", teamLists[1].ConvertAll(p => p.SeatIndex.ToString()))}]");
+        return (players, teams, order);
     }
 
     /// <summary>
     /// Returns the seat index that acts after <paramref name="currentSeat"/>,
     /// wrapping from the last seat back to seat 0.
     /// </summary>
-    public int NextSeat(int currentSeat) => (currentSeat + 1) % Players.Count;
+    public int NextSeat(int currentSeat) => NextSeat(currentSeat, Players.Count);
+
+    /// <summary>
+    /// Stateless overload — usable without an instance and in tests.
+    /// </summary>
+    public static int NextSeat(int currentSeat, int playerCount) => (currentSeat + 1) % playerCount;
 
     /// <summary>
     /// Returns the <see cref="PlayerData"/> at the given seat, or <c>null</c> if the
@@ -119,4 +151,11 @@ public class SeatingManager : MonoBehaviour
     /// Rule: <c>seatIndex % 2</c>.
     /// </summary>
     public static int TeamIndexForSeat(int seatIndex) => seatIndex % 2;
+
+    private static string SeatList(IReadOnlyList<PlayerData> players)
+    {
+        var parts = new string[players.Count];
+        for (int i = 0; i < players.Count; i++) parts[i] = players[i].SeatIndex.ToString();
+        return string.Join(", ", parts);
+    }
 }
