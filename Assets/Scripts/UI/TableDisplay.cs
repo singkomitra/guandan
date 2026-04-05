@@ -31,7 +31,7 @@ public class TableDisplay : MonoBehaviour, IPointerClickHandler, IDropHandler
 
     [Header("Layout")]
     [Tooltip("Horizontal distance between card centres.")]
-    [SerializeField] private float _cardSpacing = 110f;
+    [SerializeField] private readonly float _cardSpacing = 110f;
     [Tooltip("Max random offset (px) applied to each card's landing position.")]
     [SerializeField, Range(0f, 30f)] private readonly float _placementJitter = 8f;
 
@@ -41,7 +41,7 @@ public class TableDisplay : MonoBehaviour, IPointerClickHandler, IDropHandler
     [Tooltip("Scale of the most recently played set.")]
     [SerializeField, Range(0.1f, 1f)] private readonly float _cardDisplayScale = 0.6f;
     [Tooltip("Positional offset applied to sets pushed behind the current one, so they peek out.")]
-    [SerializeField] private Vector2 _stackOffset = new Vector2(6f, -6f);
+    [SerializeField] private readonly Vector2 _stackOffset = new Vector2(6f, -6f);
 
     // ── State ────────────────────────────────────────────────────────────────
 

@@ -28,16 +28,16 @@ public class TrickHistoryOverlay : MonoBehaviour
     [SerializeField] private TrickManager  _trickManager;
 
     [Header("Layout")]
-    [SerializeField] private float _rowHeight  = 120f;
+    [SerializeField] private readonly float _rowHeight  = 120f;
     [SerializeField] private readonly float _cardWidth  = 70f;
-    [SerializeField] private float _cardHeight = 100f;
-    [SerializeField] private float _cardGap    = 8f;
-    [SerializeField] private float _labelWidth = 220f;
-    [SerializeField] private float _panelWidth = 900f;
-    [SerializeField] private float _padding    = 30f;
+    [SerializeField] private readonly float _cardHeight = 100f;
+    [SerializeField] private readonly float _cardGap    = 8f;
+    [SerializeField] private readonly float _labelWidth = 220f;
+    [SerializeField] private readonly float _panelWidth = 900f;
+    [SerializeField] private readonly float _padding    = 30f;
 
     [Header("Animation")]
-    [SerializeField] private float _fadeDuration = 0.15f;
+    [SerializeField] private readonly float _fadeDuration = 0.15f;
 
     // ── Singleton ─────────────────────────────────────────────────────────────
 
