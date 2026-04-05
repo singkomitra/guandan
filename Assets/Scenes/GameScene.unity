@@ -513,7 +513,6 @@ MonoBehaviour:
   _panel: {fileID: 65009803}
   _trickManager: {fileID: 931816167}
   _rowHeight: 120
-  _cardWidth: 70
   _cardHeight: 100
   _cardGap: 8
   _labelWidth: 220
@@ -604,7 +603,7 @@ RectTransform:
   m_GameObject: {fileID: 379525474}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_LocalScale: {x: 0, y: 0, z: 0}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 294219266}
@@ -991,9 +990,7 @@ MonoBehaviour:
   _cardContainer: {fileID: 1243539247}
   _tableDropZone: {fileID: 1673787569}
   _cardSpacing: 150
-  _animSpeed: 12
-  _cardDisplayScale: 0.6
-  _backgroundScaleFactor: 0.8
+  _stackOffset: {x: 6, y: -6}
 --- !u!1 &1497969739
 GameObject:
   m_ObjectHideFlags: 0
@@ -1273,7 +1270,6 @@ MonoBehaviour:
   syncMode: 0
   syncInterval: 0
   _cardManager: {fileID: 313375000}
-  _devHandSize: 26
 --- !u!114 &1704199693
 MonoBehaviour:
   m_ObjectHideFlags: 0
