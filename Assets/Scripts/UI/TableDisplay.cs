@@ -94,13 +94,13 @@ public class TableDisplay : MonoBehaviour, IPointerClickHandler
         foreach (var go in _currentCards)
         {
             if (go == null) continue;
-            var rt = go.GetComponent<RectTransform>();
+            var brt = go.GetComponent<RectTransform>();
             _previousCards.Add(go);
-            StartCoroutine(FlyToTarget(rt, rt.anchoredPosition, backgroundScale));
+            StartCoroutine(FlyToTarget(brt, brt.anchoredPosition, backgroundScale));
         }
         _currentCards.Clear();
 
-        // Take ownership of the new cards and fly them to the table centre.
+        // Fly new cards to the table centre.
         float totalWidth = (cards.Count - 1) * _cardSpacing;
         float startX     = -totalWidth * 0.5f;
 
@@ -113,11 +113,9 @@ public class TableDisplay : MonoBehaviour, IPointerClickHandler
             rt.SetParent(_cardContainer, worldPositionStays: true);
             rt.SetAsLastSibling();
 
-            var targetPos   = new Vector2(startX + i * _cardSpacing, 0f);
-            var targetScale = Vector3.one * _cardDisplayScale;
-
             _currentCards.Add(rt.gameObject);
-            StartCoroutine(FlyToTarget(rt, targetPos, targetScale));
+            StartCoroutine(FlyToTarget(rt, new Vector2(startX + i * _cardSpacing, 0f),
+                                       Vector3.one * _cardDisplayScale));
         }
     }
 
@@ -149,12 +147,18 @@ public class TableDisplay : MonoBehaviour, IPointerClickHandler
 
     private static void DisableInteraction(GameObject go)
     {
-        var drag       = go.GetComponent<CardDrag>();
+        // CardDrag is intentionally NOT disabled here.
+        // OnDrop fires before OnEndDrag; disabling CardDrag here prevents OnEndDrag from
+        // firing, which means GroupDragHandler.OnAnyDragEnd never runs, _isGroupDragging
+        // stays true, and LateUpdate keeps driving followers with mouse movement.
+        // raycastTarget = false on the Image is sufficient to block new interactions.
         var hover      = go.GetComponent<CardHover>();
         var selectable = go.GetComponent<CardSelectable>();
-        if (drag       != null) drag.enabled       = false;
         if (hover      != null) hover.enabled      = false;
         if (selectable != null) selectable.enabled = false;
+
+        var cg = go.GetComponent<CanvasGroup>();
+        if (cg != null) cg.interactable = false;
 
         var img = go.GetComponent<Image>();
         if (img != null) img.raycastTarget = false;

@@ -196,10 +196,8 @@ public class TrickHistoryOverlay : MonoBehaviour
 
     private static void DisableInteraction(GameObject go)
     {
-        var drag       = go.GetComponent<CardDrag>();
         var hover      = go.GetComponent<CardHover>();
         var selectable = go.GetComponent<CardSelectable>();
-        if (drag       != null) drag.enabled       = false;
         if (hover      != null) hover.enabled      = false;
         if (selectable != null) selectable.enabled = false;
         var img = go.GetComponent<Image>();

@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using Mirror;
 using UnityEngine.UI;
 
 /// <summary>
@@ -99,6 +100,11 @@ public class HandManager : MonoBehaviour
         CardDrag.AnyDragEnd       += OnAnyDragEnd;
         CardDrag.AnyDragMoved     += OnAnyDragMoved;
         CardHover.AnyHoverChanged += OnAnyHoverChanged;
+
+#if UNITY_EDITOR || DEV_BUILD
+        if (!NetworkClient.active)
+            DealNewHand();
+#endif
     }
 
     private void OnDestroy()
