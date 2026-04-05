@@ -20,12 +20,13 @@ using UnityEngine.UI;
 ///      NOT inside it). Anchor centre, sizeDelta 0,0, scale 1,1,1.
 ///   3. Wire _cardManager, _trickManager, _cardContainer in the Inspector.
 /// </summary>
-public class TableDisplay : MonoBehaviour, IPointerClickHandler
+public class TableDisplay : MonoBehaviour, IPointerClickHandler, IDropHandler
 {
     [Header("Refs")]
     [SerializeField] private CardManager   _cardManager;
     [SerializeField] private TrickManager  _trickManager;
     [SerializeField] private RectTransform _cardContainer;
+    [SerializeField] private TableDropZone _tableDropZone;
 
     [Header("Layout")]
     [Tooltip("Horizontal distance between card centres.")]
@@ -81,6 +82,13 @@ public class TableDisplay : MonoBehaviour, IPointerClickHandler
         if (_trickManager.TrickHistory.Count > 0)
             TrickHistoryOverlay.Show(_trickManager.TrickHistory, _cardManager);
     }
+
+    // ── Drop ─────────────────────────────────────────────────────────────────
+
+    // TableCardDisplay sits on top of TableArea and intercepts raycasts.
+    // Forward drops so TableDropZone still receives them regardless of which
+    // part of the table the card lands on.
+    public void OnDrop(PointerEventData eventData) => _tableDropZone?.OnDrop(eventData);
 
     // ── Event handlers ───────────────────────────────────────────────────────
 

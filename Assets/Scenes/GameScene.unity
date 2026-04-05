@@ -989,7 +989,8 @@ MonoBehaviour:
   _cardManager: {fileID: 313375000}
   _trickManager: {fileID: 931816167}
   _cardContainer: {fileID: 1243539247}
-  _cardSpacing: 110
+  _tableDropZone: {fileID: 1673787569}
+  _cardSpacing: 150
   _animSpeed: 12
   _cardDisplayScale: 0.6
   _backgroundScaleFactor: 0.8
