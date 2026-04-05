@@ -101,10 +101,10 @@ public class HandManager : MonoBehaviour
         CardDrag.AnyDragMoved     += OnAnyDragMoved;
         CardHover.AnyHoverChanged += OnAnyHoverChanged;
 
-#if UNITY_EDITOR || DEV_BUILD
-        if (!NetworkClient.active)
-            DealNewHand();
-#endif
+        #if UNITY_EDITOR || DEV_BUILD
+                if (!NetworkClient.active)
+                    DealNewHand();
+        #endif
     }
 
     private void OnDestroy()
