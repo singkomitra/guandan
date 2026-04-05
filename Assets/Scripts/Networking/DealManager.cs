@@ -80,14 +80,14 @@ public class DealManager : NetworkBehaviour
         int seed = Random.Range(1, int.MaxValue); // server owns the entropy
         var deck = _cardManager.GetShuffledDoubleDeck(seed);
 
-        if (deck.Count % players.Count != 0)
-            Debug.LogWarning($"[DealManager] {deck.Count} cards not evenly divisible among {players.Count} players; {deck.Count % players.Count} card(s) will not be dealt.");
+        #if UNITY_EDITOR || DEV_BUILD
+            int handSize = players.Count < 4 ? _devHandSize : deck.Count / players.Count;
+        #else
+            if (deck.Count % players.Count != 0)
+                Debug.LogWarning($"[DealManager] {deck.Count} cards not evenly divisible among {players.Count} players; {deck.Count % players.Count} card(s) will not be dealt.");
 
-#if UNITY_EDITOR || DEV_BUILD
-        int handSize = players.Count < 4 ? _devHandSize : deck.Count / players.Count;
-#else
-        int handSize = deck.Count / players.Count;
-#endif
+            int handSize = deck.Count / players.Count;
+        #endif
         Debug.Log($"[DealManager] Dealing {deck.Count} cards to {players.Count} players ({handSize} each, seed={seed})");
 
         for (int i = 0; i < players.Count; i++)
