@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using Mirror;
 
 public class GuandanNetworkManager : NetworkManager
@@ -28,6 +29,9 @@ public class GuandanNetworkManager : NetworkManager
     {
         base.OnServerAddPlayer(conn);
         Debug.Log($"[Server] Player spawned for connId={conn.connectionId}");
+
+        if (SceneManager.GetActiveScene().name == "GameScene")
+            DealManager.Instance?.OnConnectionReady();
     }
 
     // CLIENT-SIDE: logs appear in the joining client's console

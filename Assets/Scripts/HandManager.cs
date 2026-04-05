@@ -48,7 +48,9 @@ public class HandManager : MonoBehaviour
     [Tooltip("Lerp speed for returning cards after a failed drop.")]
     [SerializeField] private float _returnSpeed = 14f;
 
-    // ── Static reference ────────────────────────────────────────────────────
+    // ── Static references ────────────────────────────────────────────────────
+    public static HandManager Instance { get; private set; }
+
     // CardDrag reads this to detect whether a card was dragged from the hand
     // without requiring an HLG component on the parent.
     public static RectTransform HandViewRT { get; private set; }
@@ -73,6 +75,7 @@ public class HandManager : MonoBehaviour
 
     private void Awake()
     {
+        Instance   = this;
         HandViewRT = _handView;
         _canvas    = _handView ? _handView.GetComponentInParent<Canvas>() : null;
     }
@@ -96,12 +99,11 @@ public class HandManager : MonoBehaviour
         CardDrag.AnyDragEnd       += OnAnyDragEnd;
         CardDrag.AnyDragMoved     += OnAnyDragMoved;
         CardHover.AnyHoverChanged += OnAnyHoverChanged;
-
-        DealNewHand();
     }
 
     private void OnDestroy()
     {
+        if (Instance == this) Instance = null;
         if (_handDropZone != null) _handDropZone.CardReturned -= OnCardReturnedToHand;
         SelectionManager.Instance.SelectionChanged   -= OnSelectionChanged;
         SelectionManager.Instance.SelectionCommitted -= OnSelectionCommitted;
@@ -114,6 +116,26 @@ public class HandManager : MonoBehaviour
 
     // ── Deal ────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Populates the hand from a server-dealt set of cards.
+    /// Called by DealManager via TargetRpc — only runs on the local client.
+    /// </summary>
+    public void ReceiveHand(Card.CardId[] cards)
+    {
+        ClearHand();
+        foreach (var id in cards) _order.Add(id);
+
+        foreach (var id in _order)
+        {
+            var go = _manager.SpawnCard(id, _handView);
+            SetupCard(go);
+            _cardRects[id] = go.GetComponent<RectTransform>();
+        }
+
+        SnapLayout();
+    }
+
+    /// <summary>Deal a local hand for offline testing (context menu only).</summary>
     [ContextMenu("Deal New Hand")]
     public void DealNewHand()
     {
