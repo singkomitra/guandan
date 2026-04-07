@@ -190,7 +190,7 @@ public class TrickHistoryOverlay : MonoBehaviour
         tmp.enableAutoSizing     = true;
         tmp.fontSizeMin          = 16f;
         tmp.fontSizeMax          = 28f;
-        tmp.enableWordWrapping   = false;
+        tmp.textWrappingMode     = TextWrappingModes.NoWrap;
         tmp.color                = Color.white;
     }
 

@@ -33,6 +33,10 @@ public class TrickManager : MonoBehaviour
         }
     }
 
+    // ── Singleton ─────────────────────────────────────────────────────────────
+
+    public static TrickManager Instance { get; private set; }
+
     // ── Inspector ─────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -68,6 +72,8 @@ public class TrickManager : MonoBehaviour
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
+    private void Awake()     => Instance = this;
+    private void OnDestroy() { if (Instance == this) Instance = null; }
     private void OnEnable()  => SelectionManager.Instance.SelectionCommitted += OnSetCommitted;
     private void OnDisable() => SelectionManager.Instance.SelectionCommitted -= OnSetCommitted;
 
