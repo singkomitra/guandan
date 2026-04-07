@@ -1380,6 +1380,7 @@ MonoBehaviour:
   syncDirection: 0
   syncMode: 0
   syncInterval: 0
+  _devSoloMode: 1
 --- !u!114 &1731515873
 MonoBehaviour:
   m_ObjectHideFlags: 0

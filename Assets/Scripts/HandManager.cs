@@ -103,7 +103,11 @@ public class HandManager : MonoBehaviour
 
         #if UNITY_EDITOR || DEV_BUILD
                 if (!NetworkClient.active)
+                {
                     DealNewHand();
+                    if (TurnManager.IsSoloMode)
+                        TurnManager.Instance.DevStartSolo();
+                }
         #endif
     }
 

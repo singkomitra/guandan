@@ -39,6 +39,17 @@ public class TurnManager : NetworkBehaviour
     private Card.Rank _trumpRank = Card.Rank.Two;
     public Card.Rank TrumpRank => _trumpRank;
 
+    // ── Dev ───────────────────────────────────────────────────────────────────
+
+#if UNITY_EDITOR
+    [Header("Dev")]
+    [Tooltip("Skip lobby and start a local single-player session immediately. Editor only.")]
+    [SerializeField] private bool _devSoloMode = false;
+#endif
+
+    /// <summary>True when running in dev solo mode. Bypasses all network paths.</summary>
+    public static bool IsSoloMode { get; private set; }
+
     // ── Server-only state ──────────────────────────────────────────────────────
 
     /// <summary>Consecutive passes since the last play. Reset to 0 whenever a card set is played.</summary>
@@ -62,32 +73,34 @@ public class TurnManager : NetworkBehaviour
             return;
         }
         Instance = this;
+
+#if UNITY_EDITOR
+        IsSoloMode = _devSoloMode;
+#endif
+
+        // Subscribe here — Awake runs before Mirror disables scene NetworkBehaviours.
+        // C# delegate subscriptions persist regardless of component enabled state.
+        SelectionManager.Instance.IsPlayerTurn = false;
+        SelectionManager.Instance.SelectionCommitted += OnLocalCommit;
+        SelectionManager.Instance.Passed             += OnLocalPass;
     }
 
     private void OnDestroy()
     {
         if (Instance == this) Instance = null;
-    }
-
-    private void OnEnable()
-    {
-        // Disable input until TurnManager assigns the turn.
-        SelectionManager.Instance.IsPlayerTurn = false;
-
-        SelectionManager.Instance.SelectionCommitted += OnLocalCommit;
-        SelectionManager.Instance.Passed             += OnLocalPass;
-    }
-
-    private void OnDisable()
-    {
         SelectionManager.Instance.SelectionCommitted -= OnLocalCommit;
         SelectionManager.Instance.Passed             -= OnLocalPass;
     }
 
     // ── Local event handlers → Commands ───────────────────────────────────────
 
-    private void OnLocalCommit(IReadOnlyList<Card.CardId> cards, SetValidator.ValidationResult _)
+    private void OnLocalCommit(IReadOnlyList<Card.CardId> cards, SetValidator.ValidationResult result)
     {
+        if (IsSoloMode)
+        {
+            TrickManager.Instance.ApplyPlay(0, cards, result);
+            return;
+        }
         if (Player.LocalPlayer == null) return;
         var arr = new Card.CardId[cards.Count];
         for (int i = 0; i < cards.Count; i++) arr[i] = cards[i];
@@ -96,7 +109,12 @@ public class TurnManager : NetworkBehaviour
 
     private void OnLocalPass()
     {
-        Player.LocalPlayer?.CmdPass();
+        if (IsSoloMode)
+        {
+            TrickManager.Instance.StartTrick();
+            return;
+        }
+        if (Player.LocalPlayer != null) Player.LocalPlayer.CmdPass();
     }
 
     // ── Public server API ──────────────────────────────────────────────────────
@@ -252,6 +270,23 @@ public class TurnManager : NetworkBehaviour
         Debug.LogWarning($"[TurnManager] Action rejected: {reason}");
         AnnouncementOverlay.Show(AnnouncementType.Error, reason);
     }
+
+    // ── Dev helpers ───────────────────────────────────────────────────────────
+
+#if UNITY_EDITOR
+    /// <summary>
+    /// Bypasses networking and lobby for editor solo testing.
+    /// Gives the local player turn control and opens the first trick.
+    /// </summary>
+    public void DevStartSolo()
+    {
+        IsSoloMode = true;
+        TrickManager.Instance.SetTrumpRank(Card.Rank.Two);
+        TrickManager.Instance.StartTrick();
+        // SelectionManager.Instance.IsPlayerTurn = true;
+        Debug.Log("[TurnManager] Dev solo mode active — local player has the turn.");
+    }
+#endif
 
     // ── SyncVar hook ───────────────────────────────────────────────────────────
 

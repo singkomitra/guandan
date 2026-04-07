@@ -140,6 +140,7 @@ public class TableDisplay : MonoBehaviour, IPointerClickHandler, IDropHandler
     /// </summary>
     private void OnRemoteSetPlayed(TrickManager.PlayRecord record)
     {
+        if (TurnManager.IsSoloMode) return; // local play already handled by OnCardsPlayed
         int localSeat = TurnManager.Instance != null ? TurnManager.Instance.LocalSeat : -1;
         if (record.PlayerId == localSeat) return; // local play already handled by OnCardsPlayed
 
