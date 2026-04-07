@@ -3,21 +3,34 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Tracks the state of the current trick: the controlling set and the required set type.
-/// Builds and injects GameContext into SelectionManager on every state change so that
-/// SetValidator always validates against the current table.
+/// Tracks the state of the current trick: the controlling set on the table and the play history.
+/// State is driven exclusively by TurnManager RPCs — never by local SelectionManager events.
 ///
-/// Turn enforcement (whose turn it is, pass counting) is not yet implemented.
-/// When TurnManager arrives it will call StartTrick() and gate player input;
-/// this class's interface will not change.
+/// TurnManager calls:
+///   ApplyPlay  — after the server validates a card play and broadcasts it to all clients.
+///   ApplyPass  — after the server broadcasts a pass.
+///   StartTrick — after all remaining players pass, starting a new trick.
+///   SetTrumpRank — once at game start, before the first trick.
 /// </summary>
 public class TrickManager : MonoBehaviour
 {
+    public static TrickManager Instance { get; private set; }
+
+    private void Awake()
+    {
+        if (Instance != null && Instance != this) { Destroy(gameObject); return; }
+        Instance = this;
+    }
+
+    private void OnDestroy()
+    {
+        if (Instance == this) Instance = null;
+    }
+
     // ── Nested types ─────────────────────────────────────────────────────────
 
     /// <summary>
-    /// One play within a trick. PlayerId is -1 until TurnManager assigns real player IDs.
-    /// Designed to be network-serialization-friendly (value types + immutable list).
+    /// One play within a trick. PlayerId is the seat index of the player who played.
     /// </summary>
     public readonly struct PlayRecord
     {
@@ -35,10 +48,6 @@ public class TrickManager : MonoBehaviour
 
     // ── Inspector ─────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Dev-time default used until DealManager exists to supply the trump rank per deal.
-    /// At that point this field will be set via a method call and the SerializeField removed.
-    /// </summary>
     [SerializeField] private Card.Rank _trumpRank = Card.Rank.Two;
 
     // ── Public state ──────────────────────────────────────────────────────────
@@ -46,8 +55,6 @@ public class TrickManager : MonoBehaviour
     /// <summary>
     /// The set currently on the table that subsequent players must beat.
     /// Null when the trick is open (the leader has not yet played).
-    /// Callers must not hold onto the returned reference across frames;
-    /// it is replaced (not mutated) on every <see cref="StartTrick"/> or commit.
     /// </summary>
     public SetValidator.ValidationResult ControllingSet { get; private set; }
 
@@ -56,7 +63,11 @@ public class TrickManager : MonoBehaviour
 
     // ── Events ────────────────────────────────────────────────────────────────
 
-    /// <summary>Fired after a set is committed and recorded. Subscribe for display/networking.</summary>
+    /// <summary>
+    /// Fired after a set is applied and recorded. PlayRecord.PlayerId is the seat index.
+    /// TableDisplay uses this to render remote plays; local plays are already animated
+    /// via HandManager.CardsPlayed before this fires.
+    /// </summary>
     public event Action<PlayRecord> SetPlayed;
 
     /// <summary>Fired after trick state is reset. Subscribe to clear the table display.</summary>
@@ -66,20 +77,32 @@ public class TrickManager : MonoBehaviour
 
     private readonly List<PlayRecord> _history = new();
 
-    // ── Lifecycle ─────────────────────────────────────────────────────────────
-
-    private void OnEnable()  => SelectionManager.Instance.SelectionCommitted += OnSetCommitted;
-    private void OnDisable() => SelectionManager.Instance.SelectionCommitted -= OnSetCommitted;
-
-    // TODO: remove once DealManager exists. DealManager should call StartTrick() for the
-    // first trick of each deal; TurnManager should call it for every subsequent trick.
-    private void Start() => StartTrick();
-
     // ── Public API ────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Resets trick state. Call when all other players have passed and a new trick begins.
-    /// Also exposed as a context menu item for manual testing in the Inspector.
+    /// Records a validated play from any player. Called by TurnManager.RpcApplyPlay on all clients.
+    /// Updates the controlling set, pushes context into SelectionManager, and fires SetPlayed.
+    /// </summary>
+    public void ApplyPlay(int seatIndex, IReadOnlyList<Card.CardId> cards, SetValidator.ValidationResult result)
+    {
+        ControllingSet = result;
+        var record = new PlayRecord(seatIndex, cards, result);
+        _history.Add(record);
+        PushContext();
+        SetPlayed?.Invoke(record);
+    }
+
+    /// <summary>
+    /// Records a pass from a player. Called by TurnManager.RpcApplyPass on all clients.
+    /// Currently a no-op beyond logging; pass history could be surfaced via TrickHistory if needed.
+    /// </summary>
+    public void ApplyPass(int seatIndex)
+    {
+        Debug.Log($"[TrickManager] Seat {seatIndex} passed.");
+    }
+
+    /// <summary>
+    /// Resets trick state. Called by TurnManager.RpcStartNewTrick and at game start.
     /// </summary>
     [ContextMenu("Start New Trick")]
     public void StartTrick()
@@ -90,16 +113,16 @@ public class TrickManager : MonoBehaviour
         TrickStarted?.Invoke();
     }
 
-    // ── Private ───────────────────────────────────────────────────────────────
-
-    private void OnSetCommitted(IReadOnlyList<Card.CardId> cards, SetValidator.ValidationResult result)
+    /// <summary>
+    /// Sets the trump rank for the current deal. Called by TurnManager.RpcSyncGameStart.
+    /// </summary>
+    public void SetTrumpRank(Card.Rank rank)
     {
-        ControllingSet = result;
-        var record = new PlayRecord(-1, cards, result);
-        _history.Add(record);
+        _trumpRank = rank;
         PushContext();
-        SetPlayed?.Invoke(record);
     }
+
+    // ── Private ───────────────────────────────────────────────────────────────
 
     private void PushContext()
     {

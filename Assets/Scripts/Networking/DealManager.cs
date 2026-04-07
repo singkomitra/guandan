@@ -23,6 +23,12 @@ public class DealManager : NetworkBehaviour
 
     private bool _hasDealt;
 
+    /// <summary>
+    /// Server-side copy of each player's remaining hand, keyed by netId.
+    /// Used by TurnManager to verify a player holds the cards they claim to play.
+    /// </summary>
+    private readonly Dictionary<uint, HashSet<Card.CardId>> _serverHands = new();
+
     private void Awake()  => Instance = this;
     private void OnDestroy() { if (Instance == this) Instance = null; }
 
@@ -38,7 +44,6 @@ public class DealManager : NetworkBehaviour
         foreach (var conn in NetworkServer.connections.Values)
             if (conn.identity == null) return; // at least one Player not yet spawned
 
-        DealCards();
         _hasDealt = true;
         DealCards();
     }
@@ -97,11 +102,36 @@ public class DealManager : NetworkBehaviour
         #endif
         Debug.Log($"[DealManager] Dealing {deck.Count} cards to {players.Count} players ({handSize} each, seed={seed})");
 
+        _serverHands.Clear();
         for (int i = 0; i < players.Count; i++)
         {
+            players[i].SeatIndex = i;
             var hand = deck.GetRange(i * handSize, handSize).ToArray();
+            _serverHands[players[i].netId] = new HashSet<Card.CardId>(hand);
             TargetRpcReceiveHand(players[i].connectionToClient, hand);
         }
+
+        // Seat 0 leads the first trick; trump rank defaults to Two until round scoring is implemented.
+        if (TurnManager.Instance != null)
+            TurnManager.Instance.StartGame(leadSeat: 0, trumpRank: Card.Rank.Two);
+        else
+            Debug.LogError("[DealManager] TurnManager.Instance is null — turn management will not start.");
+    }
+
+    /// <summary>
+    /// Checks that <paramref name="netId"/> holds all <paramref name="cards"/>, then removes
+    /// them from the server-side hand. Returns false (and removes nothing) if any card is missing.
+    /// Called by TurnManager before accepting a play.
+    /// </summary>
+    [Server]
+    public bool TryConsumeCards(uint netId, Card.CardId[] cards)
+    {
+        if (!_serverHands.TryGetValue(netId, out var hand)) return false;
+        foreach (var card in cards)
+            if (!hand.Contains(card)) return false;
+        foreach (var card in cards)
+            hand.Remove(card);
+        return true;
     }
 
     /// <summary>Sends a player their hand. Only the targeted client receives this message.</summary>

@@ -66,12 +66,14 @@ public class TableDisplay : MonoBehaviour, IPointerClickHandler, IDropHandler
     {
         HandManager.CardsPlayed    += OnCardsPlayed;
         _trickManager.TrickStarted += OnTrickStarted;
+        _trickManager.SetPlayed    += OnRemoteSetPlayed;
     }
 
     private void OnDisable()
     {
         HandManager.CardsPlayed    -= OnCardsPlayed;
         _trickManager.TrickStarted -= OnTrickStarted;
+        _trickManager.SetPlayed    -= OnRemoteSetPlayed;
 
         StopAllCoroutines();
         DestroyAll(_currentCards);
@@ -127,6 +129,49 @@ public class TableDisplay : MonoBehaviour, IPointerClickHandler, IDropHandler
             var jitter = new Vector2(
                 UnityEngine.Random.Range(-_placementJitter, _placementJitter),
                 UnityEngine.Random.Range(-_placementJitter, _placementJitter));
+            StartCoroutine(FlyToTarget(rt, new Vector2(startX + i * _cardSpacing, 0f) + jitter,
+                                       Vector3.one * _cardDisplayScale));
+        }
+    }
+
+    /// <summary>
+    /// Renders a play from a remote player by spawning fresh card GameObjects at the table centre.
+    /// Skipped for the local player because HandManager.CardsPlayed already animated those cards.
+    /// </summary>
+    private void OnRemoteSetPlayed(TrickManager.PlayRecord record)
+    {
+        int localSeat = TurnManager.Instance != null ? TurnManager.Instance.LocalSeat : -1;
+        if (record.PlayerId == localSeat) return; // local play already handled by OnCardsPlayed
+
+        StopAllCoroutines();
+        DestroyAll(_exitingCards);
+
+        foreach (var go in _currentCards)
+        {
+            if (go == null) continue;
+            var brt = go.GetComponent<RectTransform>();
+            _previousCards.Add(go);
+            StartCoroutine(FlyToTarget(brt, brt.anchoredPosition + _stackOffset, Vector3.one * _cardDisplayScale));
+        }
+        _currentCards.Clear();
+
+        var cards = record.Cards;
+        float totalWidth = (cards.Count - 1) * _cardSpacing;
+        float startX     = -totalWidth * 0.5f;
+
+        for (int i = 0; i < cards.Count; i++)
+        {
+            GameObject go = _cardManager.SpawnCard(cards[i], _cardContainer);
+            if (go == null) continue;
+
+            DisableInteraction(go);
+            var rt = go.GetComponent<RectTransform>();
+            // Start at the table centre then animate to the final spread position.
+            rt.anchoredPosition = Vector2.zero;
+            var jitter = new Vector2(
+                UnityEngine.Random.Range(-_placementJitter, _placementJitter),
+                UnityEngine.Random.Range(-_placementJitter, _placementJitter));
+            _currentCards.Add(go);
             StartCoroutine(FlyToTarget(rt, new Vector2(startX + i * _cardSpacing, 0f) + jitter,
                                        Vector3.one * _cardDisplayScale));
         }

@@ -31,6 +31,12 @@ public class SelectionManager
     /// <summary>Fired when selection is explicitly cleared (Clear or Pass).</summary>
     public event Action SelectionCleared;
 
+    /// <summary>
+    /// Fired specifically when the player passes their turn (not on a plain Clear).
+    /// TurnManager subscribes to forward this to the server via CmdPass.
+    /// </summary>
+    public event Action Passed;
+
     /// <summary>Fired when Commit is attempted but SetValidator rejects the set.</summary>
     public event Action<SetValidator.ValidationResult> CommitFailed;
 
@@ -99,13 +105,14 @@ public class SelectionManager
         SelectionChanged?.Invoke(_staged);
     }
 
-    /// <summary>Clear selection and pass the turn (turn advance wired by TurnManager later).</summary>
+    /// <summary>Clear selection and pass the turn. TurnManager forwards this to the server.</summary>
     public void Pass()
     {
         if (!IsPlayerTurn) return;
         _staged.Clear();
         SelectionCleared?.Invoke();
         SelectionChanged?.Invoke(_staged);
+        Passed?.Invoke();
     }
 
     /// <summary>Injected by TurnManager when turn context changes (required type, must-beat set).</summary>
