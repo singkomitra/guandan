@@ -108,3 +108,5 @@ UpgradeLog*.htm
 UpgradeLog*.html
 
 .claude
+
+Resources/*.json
