@@ -22,6 +22,7 @@ public class DealManager : NetworkBehaviour
     [SerializeField] private readonly int _devHandSize = 26;
 
     private bool _hasDealt;
+    private int _readyCount;
 
     /// <summary>
     /// Server-side copy of each player's remaining hand, keyed by netId.
@@ -33,16 +34,18 @@ public class DealManager : NetworkBehaviour
     private void OnDestroy() { if (Instance == this) Instance = null; }
 
     /// <summary>
-    /// Called by GuandanNetworkManager.OnServerAddPlayer each time a client has their
-    /// Player object spawned in GameScene. Deals once all connected clients are ready.
+    /// Called via Player.CmdClientReady after OnStartLocalPlayer completes on each client.
+    /// Guarantees Player.LocalPlayer is set on every client before dealing begins.
+    /// Deals once all connected clients have confirmed ready.
     /// </summary>
     [Server]
-    public void OnConnectionReady()
+    public void OnClientReady()
     {
+        Debug.Log($"[DealManager] OnClientReady — _readyCount={_readyCount}, connections={NetworkServer.connections.Count}, _hasDealt={_hasDealt}");
         if (_hasDealt) return;
 
-        foreach (var conn in NetworkServer.connections.Values)
-            if (conn.identity == null) return; // at least one Player not yet spawned
+        _readyCount++;
+        if (_readyCount < NetworkServer.connections.Count) return;
 
         _hasDealt = true;
         DealCards();

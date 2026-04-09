@@ -32,6 +32,7 @@ public class Player : NetworkBehaviour
     {
         LocalPlayer = this;
         Debug.Log($"[Client] Local player started: netId={netId}");
+        CmdClientReady();
     }
 
     [Command]
@@ -43,6 +44,16 @@ public class Player : NetworkBehaviour
         Debug.Log($"[Server] Player {playerName} (connId={connectionToClient.connectionId}) is leaving.");
         if (LobbyManager.Instance != null)
             LobbyManager.Instance.RefreshPlayerSlots();
+    }
+
+    /// <summary>
+    /// Sent after OnStartLocalPlayer completes, guaranteeing Player.LocalPlayer is set
+    /// on this client before the server proceeds with dealing.
+    /// </summary>
+    [Command]
+    public void CmdClientReady()
+    {
+        if (DealManager.Instance != null) DealManager.Instance.OnClientReady();
     }
 
     /// <summary>Sends the local player's card play to the server for validation and broadcast.</summary>

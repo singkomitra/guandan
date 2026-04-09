@@ -39,15 +39,9 @@ public class TurnManager : NetworkBehaviour
     private Card.Rank _trumpRank = Card.Rank.Two;
     public Card.Rank TrumpRank => _trumpRank;
 
-    // ── Dev ───────────────────────────────────────────────────────────────────
+    public int CurrentSeat => _currentSeat;
 
-#if UNITY_EDITOR
-    [Header("Dev")]
-    [Tooltip("Skip lobby and start a local single-player session immediately. Editor only.")]
-    [SerializeField] private bool _devSoloMode = false;
-#endif
-
-    /// <summary>True when running in dev solo mode. Bypasses all network paths.</summary>
+    /// <summary>True in the editor without a network connection. Bypasses all network paths.</summary>
     public static bool IsSoloMode { get; private set; }
 
     // ── Server-only state ──────────────────────────────────────────────────────
@@ -59,9 +53,6 @@ public class TurnManager : NetworkBehaviour
     private int _lastPlaySeat = -1;
 
     // ── Properties ────────────────────────────────────────────────────────────
-
-    /// <summary>Seat index of the local player. -1 until DealManager assigns seating.</summary>
-    public int LocalSeat => Player.LocalPlayer != null ? Player.LocalPlayer.SeatIndex : -1;
 
     // ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -75,7 +66,7 @@ public class TurnManager : NetworkBehaviour
         Instance = this;
 
 #if UNITY_EDITOR
-        IsSoloMode = _devSoloMode;
+        IsSoloMode = !NetworkClient.active;
 #endif
 
         // Subscribe here — Awake runs before Mirror disables scene NetworkBehaviours.
@@ -132,10 +123,10 @@ public class TurnManager : NetworkBehaviour
 
         RpcSyncGameStart(trumpRank);
 
+        TrickManager.Instance.StartTrick();
+
         // _currentSeat SyncVar change triggers OnCurrentSeatChanged on all clients.
         _currentSeat = leadSeat;
-
-        TrickManager.Instance.StartTrick();
         Debug.Log($"[TurnManager] Game started. Lead seat: {leadSeat}, Trump: {trumpRank}");
     }
 
@@ -178,7 +169,7 @@ public class TurnManager : NetworkBehaviour
         _passCount    = 0;
         _lastPlaySeat = seat;
 
-        RpcApplyPlay(seat, cards);
+        RpcApplyPlay(seat, cards, result.Type, result.KeyRank, result.Description);
         AdvanceTurn();
     }
 
@@ -227,20 +218,19 @@ public class TurnManager : NetworkBehaviour
     // ── Client RPCs ────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Applies a validated play on all clients. The result is re-derived locally from
-    /// the cards and current context — all clients share the same ordered RPC stream,
-    /// so context is always in sync when this arrives.
+    /// Applies a server-validated play on all clients. The result fields are passed
+    /// directly from the server — no re-validation needed on the client.
     /// </summary>
     [ClientRpc]
-    private void RpcApplyPlay(int seatIndex, Card.CardId[] cards)
+    private void RpcApplyPlay(int seatIndex, Card.CardId[] cards, SetValidator.SetType type, Card.Rank keyRank, string description)
     {
-        var context = new SetValidator.GameContext
+        var result = new SetValidator.ValidationResult
         {
-            MustBeat     = TrickManager.Instance.ControllingSet,
-            RequiredType = TrickManager.Instance.ControllingSet?.Type,
-            TrumpRank    = TrumpRank,
+            IsValid     = true,
+            Type        = type,
+            KeyRank     = keyRank,
+            Description = description,
         };
-        SetValidator.ValidationResult result = SetValidator.Validate(cards, context);
         TrickManager.Instance.ApplyPlay(seatIndex, cards, result);
     }
 
@@ -280,10 +270,9 @@ public class TurnManager : NetworkBehaviour
     /// </summary>
     public void DevStartSolo()
     {
-        IsSoloMode = true;
         TrickManager.Instance.SetTrumpRank(Card.Rank.Two);
         TrickManager.Instance.StartTrick();
-        // SelectionManager.Instance.IsPlayerTurn = true;
+        SelectionManager.Instance.IsPlayerTurn = true;
         Debug.Log("[TurnManager] Dev solo mode active — local player has the turn.");
     }
 #endif
@@ -295,9 +284,11 @@ public class TurnManager : NetworkBehaviour
     /// Gates local input so only the active player can submit actions.
     /// </summary>
     private void OnCurrentSeatChanged(int _, int newSeat)
+    
     {
-        bool isMyTurn = newSeat >= 0 && newSeat == LocalSeat;
+        int localSeat = Player.LocalPlayer != null ? Player.LocalPlayer.SeatIndex : -1;
+        bool isMyTurn = newSeat >= 0 && newSeat == localSeat;
         SelectionManager.Instance.IsPlayerTurn = isMyTurn;
-        Debug.Log($"[TurnManager] Seat {newSeat}'s turn | local seat {LocalSeat} | myTurn={isMyTurn}");
+        Debug.Log($"[TurnManager] Seat {newSeat}'s turn | local seat {localSeat} | myTurn={isMyTurn}");
     }
 }

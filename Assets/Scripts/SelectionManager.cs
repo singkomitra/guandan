@@ -75,7 +75,12 @@ public class SelectionManager
         if (!IsPlayerTurn)
         {
             if (_staged.Count > 0)
+            {
+                _staged.Clear();
                 CommitFailed?.Invoke(new SetValidator.ValidationResult { IsValid = false, Code = SetValidator.FailCode.NotYourTurn, FailReason = "Not your turn" });
+                SelectionCleared?.Invoke();
+                SelectionChanged?.Invoke(_staged);
+            }
             return false;
         }
         if (_staged.Count == 0) return false;
