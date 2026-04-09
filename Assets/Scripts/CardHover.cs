@@ -23,6 +23,38 @@ public class CardHover : MonoBehaviour, IPointerEnterHandler, IPointerExitHandle
     /// </summary>
     public static event Action<Card.CardId, bool> AnyHoverChanged;
 
+    /// <summary>Set by CardDrag — suppresses hover effects while any card is being dragged.</summary>
+    public static bool IsDragging { get; private set; }
+
+    private void OnEnable()
+    {
+        CardDrag.AnyDragBegin += OnAnyDragBegin;
+        CardDrag.AnyDragEnd   += OnAnyDragEnd;
+    }
+
+    private void OnDisable()
+    {
+        CardDrag.AnyDragBegin -= OnAnyDragBegin;
+        CardDrag.AnyDragEnd   -= OnAnyDragEnd;
+    }
+
+    private void OnAnyDragBegin(CardDrag _)
+    {
+        IsDragging = true;
+        // Clear hover state on this card so it doesn't stay lit while another card is dragged.
+        if (_isHovered)
+        {
+            _isHovered = false;
+            UpdateVisuals();
+            if (_card != null) AnyHoverChanged?.Invoke(_card.Id, false);
+        }
+    }
+
+    private void OnAnyDragEnd(CardDrag _)
+    {
+        IsDragging = false;
+    }
+
     private void Awake()
     {
         _card = GetComponent<Card>();
@@ -39,6 +71,7 @@ public class CardHover : MonoBehaviour, IPointerEnterHandler, IPointerExitHandle
 
     public void OnPointerEnter(PointerEventData eventData)
     {
+        if (IsDragging) return;
         _isHovered = true;
         UpdateVisuals();
         if (_card != null) AnyHoverChanged?.Invoke(_card.Id, true);
