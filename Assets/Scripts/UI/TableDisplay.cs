@@ -140,16 +140,18 @@ public class TableDisplay : MonoBehaviour, IPointerClickHandler, IDropHandler
     /// </summary>
     private void OnRemoteSetPlayed(TrickManager.PlayRecord record)
     {
-        if (TurnManager.IsSoloMode) return; // local play already handled by OnCardsPlayed
+        // In solo mode Player.LocalPlayer is never set, so localSeat would be -1.
+        // record.PlayerId is 0 in solo mode, so the seat guard below would not skip it,
+        // causing double-rendering. Early return here is load-bearing.
+        if (TurnManager.IsSoloMode) return;
         int localSeat = Player.LocalPlayer != null ? Player.LocalPlayer.SeatIndex : -1;
         if (record.PlayerId == localSeat) return; // local play already handled by OnCardsPlayed
 
         StopAllCoroutines();
         DestroyAll(_exitingCards);
 
-        foreach (var go in _currentCards)
+        foreach (var go in _currentCards.Where(go => go != null))
         {
-            if (go == null) continue;
             var brt = go.GetComponent<RectTransform>();
             _previousCards.Add(go);
             StartCoroutine(FlyToTarget(brt, brt.anchoredPosition + _stackOffset, Vector3.one * _cardDisplayScale));

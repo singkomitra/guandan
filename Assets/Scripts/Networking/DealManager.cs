@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using Mirror;
 
@@ -129,8 +130,7 @@ public class DealManager : NetworkBehaviour
     public bool TryConsumeCards(uint netId, Card.CardId[] cards)
     {
         if (!_serverHands.TryGetValue(netId, out var hand)) return false;
-        foreach (var card in cards)
-            if (!hand.Contains(card)) return false;
+        if (!cards.All(hand.Contains)) return false;
         foreach (var card in cards)
             hand.Remove(card);
         return true;

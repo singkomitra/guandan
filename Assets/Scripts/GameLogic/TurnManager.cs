@@ -79,8 +79,11 @@ public class TurnManager : NetworkBehaviour
     private void OnDestroy()
     {
         if (Instance == this) Instance = null;
-        SelectionManager.Instance.SelectionCommitted -= OnLocalCommit;
-        SelectionManager.Instance.Passed             -= OnLocalPass;
+        if (SelectionManager.Instance != null)
+        {
+            SelectionManager.Instance.SelectionCommitted -= OnLocalCommit;
+            SelectionManager.Instance.Passed             -= OnLocalPass;
+        }
     }
 
     // ── Local event handlers → Commands ───────────────────────────────────────
