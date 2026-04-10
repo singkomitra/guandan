@@ -123,8 +123,6 @@ public class TurnManager : NetworkBehaviour
 
         RpcSyncGameStart(trumpRank);
 
-        TrickManager.Instance.StartTrick();
-
         // _currentSeat SyncVar change triggers OnCurrentSeatChanged on all clients.
         _currentSeat = leadSeat;
         Debug.Log($"[TurnManager] Game started. Lead seat: {leadSeat}, Trump: {trumpRank}");
@@ -251,6 +249,7 @@ public class TurnManager : NetworkBehaviour
     private void RpcSyncGameStart(Card.Rank trumpRank)
     {
         TrickManager.Instance.SetTrumpRank(trumpRank);
+        TrickManager.Instance.StartTrick();
     }
 
     /// <summary>Sends rejection feedback only to the player whose action was rejected.</summary>

@@ -41,7 +41,6 @@ public class DealManager : NetworkBehaviour
     [Server]
     public void OnClientReady()
     {
-        Debug.Log($"[DealManager] OnClientReady — _readyCount={_readyCount}, connections={NetworkServer.connections.Count}, _hasDealt={_hasDealt}");
         if (_hasDealt) return;
 
         _readyCount++;
