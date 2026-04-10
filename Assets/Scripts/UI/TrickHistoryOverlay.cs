@@ -64,8 +64,17 @@ public class TrickHistoryOverlay : MonoBehaviour
         if (Instance == this) Instance = null;
     }
 
-    private void OnEnable()  => _trickManager.TrickStarted += OnTrickStarted;
-    private void OnDisable() => _trickManager.TrickStarted -= OnTrickStarted;
+    private void OnEnable()
+    {
+        _trickManager.TrickStarted += OnTrickStarted;
+        _trickManager.SetPlayed    += OnSetPlayed;
+    }
+
+    private void OnDisable()
+    {
+        _trickManager.TrickStarted -= OnTrickStarted;
+        _trickManager.SetPlayed    -= OnSetPlayed;
+    }
 
     // ── Public API ────────────────────────────────────────────────────────────
 
@@ -84,6 +93,23 @@ public class TrickHistoryOverlay : MonoBehaviour
     // ── Private ──────────────────────────────────────────────────────────────
 
     private void OnTrickStarted() => HideImmediate();
+
+    private void OnSetPlayed(TrickManager.PlayRecord record)
+    {
+        // Only update if the overlay is currently visible.
+        if (_canvasGroup.alpha <= 0f && !_canvasGroup.blocksRaycasts) return;
+        int index = _entries.Count;
+        float totalHeight = (index + 1) * _rowHeight + _padding * 2f;
+        _panel.sizeDelta  = new Vector2(_panelWidth, totalHeight);
+        float topY = totalHeight * 0.5f - _padding - _rowHeight * 0.5f;
+        // Reposition existing rows.
+        for (int i = 0; i < _entries.Count; i++)
+        {
+            var rt = _entries[i].GetComponent<RectTransform>();
+            if (rt != null) rt.anchoredPosition = new Vector2(0f, topY - i * _rowHeight);
+        }
+        _entries.Add(BuildRow(record, index, topY - index * _rowHeight));
+    }
 
     private void DoShow(IReadOnlyList<TrickManager.PlayRecord> history)
     {
@@ -190,7 +216,7 @@ public class TrickHistoryOverlay : MonoBehaviour
         tmp.enableAutoSizing     = true;
         tmp.fontSizeMin          = 16f;
         tmp.fontSizeMax          = 28f;
-        tmp.enableWordWrapping   = false;
+        tmp.textWrappingMode     = TextWrappingModes.NoWrap;
         tmp.color                = Color.white;
     }
 

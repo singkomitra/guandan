@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using Mirror;
 
@@ -22,23 +23,30 @@ public class DealManager : NetworkBehaviour
     [SerializeField] private readonly int _devHandSize = 26;
 
     private bool _hasDealt;
+    private int _readyCount;
+
+    /// <summary>
+    /// Server-side copy of each player's remaining hand, keyed by netId.
+    /// Used by TurnManager to verify a player holds the cards they claim to play.
+    /// </summary>
+    private readonly Dictionary<uint, HashSet<Card.CardId>> _serverHands = new();
 
     private void Awake()  => Instance = this;
     private void OnDestroy() { if (Instance == this) Instance = null; }
 
     /// <summary>
-    /// Called by GuandanNetworkManager.OnServerAddPlayer each time a client has their
-    /// Player object spawned in GameScene. Deals once all connected clients are ready.
+    /// Called via Player.CmdClientReady after OnStartLocalPlayer completes on each client.
+    /// Guarantees Player.LocalPlayer is set on every client before dealing begins.
+    /// Deals once all connected clients have confirmed ready.
     /// </summary>
     [Server]
-    public void OnConnectionReady()
+    public void OnClientReady()
     {
         if (_hasDealt) return;
 
-        foreach (var conn in NetworkServer.connections.Values)
-            if (conn.identity == null) return; // at least one Player not yet spawned
+        _readyCount++;
+        if (_readyCount < NetworkServer.connections.Count) return;
 
-        DealCards();
         _hasDealt = true;
         DealCards();
     }
@@ -97,11 +105,35 @@ public class DealManager : NetworkBehaviour
         #endif
         Debug.Log($"[DealManager] Dealing {deck.Count} cards to {players.Count} players ({handSize} each, seed={seed})");
 
+        _serverHands.Clear();
         for (int i = 0; i < players.Count; i++)
         {
+            players[i].SeatIndex = i;
             var hand = deck.GetRange(i * handSize, handSize).ToArray();
+            _serverHands[players[i].netId] = new HashSet<Card.CardId>(hand);
             TargetRpcReceiveHand(players[i].connectionToClient, hand);
         }
+
+        // Seat 0 leads the first trick; trump rank defaults to Two until round scoring is implemented.
+        if (TurnManager.Instance != null)
+            TurnManager.Instance.StartGame(leadSeat: 0, trumpRank: Card.Rank.Two);
+        else
+            Debug.LogError("[DealManager] TurnManager.Instance is null — turn management will not start.");
+    }
+
+    /// <summary>
+    /// Checks that <paramref name="netId"/> holds all <paramref name="cards"/>, then removes
+    /// them from the server-side hand. Returns false (and removes nothing) if any card is missing.
+    /// Called by TurnManager before accepting a play.
+    /// </summary>
+    [Server]
+    public bool TryConsumeCards(uint netId, Card.CardId[] cards)
+    {
+        if (!_serverHands.TryGetValue(netId, out var hand)) return false;
+        if (!cards.All(hand.Contains)) return false;
+        foreach (var card in cards)
+            hand.Remove(card);
+        return true;
     }
 
     /// <summary>Sends a player their hand. Only the targeted client receives this message.</summary>
